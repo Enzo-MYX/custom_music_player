@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/test_scanner_screen.dart';
 void main() {
   runApp(const MusicPlayerApp());
 }
@@ -17,7 +18,7 @@ class MusicPlayerApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: null//const HomeScreen(),
+      home: const TestScannerScreen(),
     );
   }
 }

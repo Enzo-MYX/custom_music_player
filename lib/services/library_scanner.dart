@@ -22,16 +22,43 @@ class LibraryScanner {
 
     final songs = <Song>[];
 
-    await for (final entry in _saf.walk(root.uri)) {
-      final relativePath = entry.relativePath;
-
-      if (matcher.shouldInclude(relativePath)) {
-        songs.add(
-          Song(relativePath: relativePath),
-        );
-      }
-    }
+    await _scanDirectory(
+      directory: root,
+      relativeDirectory: '',
+      matcher: matcher,
+      songs: songs,
+    );
 
     return songs;
+  }
+
+  Future<void> _scanDirectory({
+    required SafDocumentFile directory,
+    required String relativeDirectory,
+    required LibraryCommandMatcher matcher,
+    required List<Song> songs,
+  }) async {
+    final entries = await _saf.list(directory.uri);
+
+    for (final entry in entries) {
+      final relativePath = relativeDirectory.isEmpty
+          ? entry.name
+          : '$relativeDirectory/${entry.name}';
+
+      if (entry.isDir) {
+        await _scanDirectory(
+          directory: entry,
+          relativeDirectory: relativePath,
+          matcher: matcher,
+          songs: songs,
+        );
+      } else {
+        if (matcher.shouldInclude(relativePath)) {
+          songs.add(
+            Song(relativePath: relativePath),
+          );
+        }
+      }
+    }
   }
 }
