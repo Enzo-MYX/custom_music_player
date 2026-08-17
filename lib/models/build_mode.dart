@@ -1,0 +1,4 @@
+enum LibraryBuildMode {
+  includeAll,
+  includeNone,
+}
