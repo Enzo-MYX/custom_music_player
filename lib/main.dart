@@ -1,7 +1,8 @@
-import 'package:custom_music_player/screens/settings_test_screen.dart';
 import 'package:flutter/material.dart';
 
-import 'screens/settings_test_screen.dart';
+import 'screens/library_manager_screen.dart';
+import 'services/library_manager.dart';
+
 void main() {
   runApp(const MusicPlayerApp());
 }
@@ -11,6 +12,8 @@ class MusicPlayerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final manager = LibraryManager();
+
     return MaterialApp(
       title: 'Custom Music Player',
       theme: ThemeData(
@@ -19,7 +22,9 @@ class MusicPlayerApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const SettingsTestScreen(),
+      home: LibraryManagerScreen(
+        manager: manager,
+      ),
     );
   }
 }

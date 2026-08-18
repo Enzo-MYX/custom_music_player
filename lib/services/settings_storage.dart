@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:custom_music_player/services/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_settings.dart';
 
-class SettingsStorage {
+class SettingsStorage implements SettingsRepository {
   static const String _settingsKey = 'app_settings';
   final SharedPreferencesAsync _preferences;
 
