@@ -176,20 +176,30 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Folder'),
-      ),
-      body: Column(
-        children: [
-          _buildPathBar(),
-          const Divider(height: 1),
-          Expanded(
-            child: _buildContent(),
-          ),
-          _buildBottomBar(),
-        ],
+    return PopScope(
+      canPop: _currentPath.isEmpty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          return;
+        }
+        _goToParent();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Select Folder'),
+        ),
+        body: Column(
+          children: [
+            _buildPathBar(),
+            const Divider(height: 1),
+            Expanded(
+              child: _buildContent(),
+            ),
+            _buildBottomBar(),
+          ],
+        ),
       ),
     );
   }

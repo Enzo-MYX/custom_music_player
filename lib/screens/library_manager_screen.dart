@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:saf/saf.dart';
 
+import 'library_editor_screen.dart';
 import '../models/build_mode.dart';
 import '../models/library_command.dart';
 import '../models/library_state.dart';
@@ -199,6 +200,35 @@ class _LibraryManagerScreenState
         return;
       }
 
+      setState(() {});
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
+  Future<void> _editLibrary(MusicLibrary library) async {
+    try {
+      final root = await _manager.getRoot();
+      if (root == null) {
+        _showError('No valid root has been selected.');
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LibraryEditorScreen(
+            manager: _manager,
+            library: library,
+            root: root,
+          ),
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
       setState(() {});
     } catch (e) {
       _showError(e.toString());
@@ -434,10 +464,16 @@ class _LibraryManagerScreenState
                 _renameLibrary(library);
               } else if (action == 'delete') {
                 _deleteLibrary(library);
+              } else if (action == 'edit') {
+                _editLibrary(library);
               }
             },
             itemBuilder: (context) {
               return const [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Text('Edit'),
+                ),
                 PopupMenuItem(
                   value: 'rename',
                   child: Text('Rename'),

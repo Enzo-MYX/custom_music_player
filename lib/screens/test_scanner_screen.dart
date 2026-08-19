@@ -1,3 +1,4 @@
+import 'package:custom_music_player/screens/path_selector_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:saf/saf.dart';
 
@@ -49,6 +50,41 @@ class _TestScannerScreenState extends State<TestScannerScreen> {
     }
   }
 
+  Future<void> _openFolderBrowser() async {
+    if (_root == null) {
+      await _chooseRoot();
+    }
+
+    final root = _root;
+
+    if (root == null) {
+      return;
+    }
+
+    final selectedPath =
+    await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => PathSelectorScreen(
+          root: root,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (selectedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Selected: /$selectedPath',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _scan() async {
     final root = _root;
     if (root == null || _scanning) {
@@ -66,9 +102,9 @@ class _TestScannerScreenState extends State<TestScannerScreen> {
       final testLibrary = MusicLibrary(
         name: 'Test',
         buildMode: LibraryBuildMode.includeAll,
-        commands: const [
-          LibraryCommand(include: false, path: 'Alexander Hamilton'),
-          LibraryCommand(include: true, path: 'Alexander Hamilton/Additions')
+        commands: [
+          LibraryCommand.create(include: false, path: 'Alexander Hamilton'),
+          LibraryCommand.create(include: true, path: 'Alexander Hamilton/Additions')
         ],
       );
       final songs = await _scanner.rebuild(
@@ -126,6 +162,22 @@ class _TestScannerScreenState extends State<TestScannerScreen> {
               child: const Text('Choose Root Directory'),
             ),
             const SizedBox(height: 8),
+
+            FilledButton.icon(
+              onPressed:
+              _scanning || _root == null
+                  ? null
+                  : _openFolderBrowser,
+              icon: const Icon(
+                Icons.folder_open,
+              ),
+              label: const Text(
+                'Test Folder Browser',
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
             ElevatedButton(
               onPressed: _root == null || _scanning ? null : _scan,
               child: Text(

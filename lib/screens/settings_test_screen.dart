@@ -45,12 +45,12 @@ class _SettingsTestScreenState
     final library = MusicLibrary(
       name: 'Test Library',
       buildMode: LibraryBuildMode.includeAll,
-      commands: const [
-        LibraryCommand(
+      commands: [
+        LibraryCommand.create(
           include: false,
           path: 'Live',
         ),
-        LibraryCommand(
+        LibraryCommand.create(
           include: true,
           path: 'Live/Favourites',
         ),

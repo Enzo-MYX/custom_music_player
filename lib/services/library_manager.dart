@@ -39,8 +39,12 @@ class LibraryManager {
   }
 
   Future<void> setRoot(SafDocumentFile root) async {
+    final rootUri = root.uri;
+    final treeUri = rootUri.contains('/document/')
+        ? rootUri.substring(0, rootUri.indexOf('/document/'))
+        : rootUri;
     final newSettings = AppSettings(
-      rootUri: root.uri,
+      rootUri: treeUri,
       libraries: _state.settings.libraries,
     );
 
@@ -109,6 +113,36 @@ class LibraryManager {
       settings: newSettings,
       selectedLibraryName:
       _state.selectedLibraryName ?? library.name,
+      songs: const [],
+      scanning: false,
+    );
+  }
+
+  Future<void> updateLibrary(MusicLibrary library) async {
+    final exists = _state.settings.libraries.any(
+          (existing) => existing.name == library.name,
+    );
+    if (!exists) {
+      throw ArgumentError(
+        'A library named "${library.name}" does not exist.',
+      );
+    }
+    final newLibraries = _state.settings.libraries.map(
+          (existing) {
+        if (existing.name != library.name) {
+          return existing;
+        }
+        return library;
+      },
+    ).toList();
+    final newSettings = AppSettings(
+      rootUri: _state.settings.rootUri,
+      libraries: newLibraries,
+    );
+    await _storage.save(newSettings);
+    _state = LibraryState(
+      settings: newSettings,
+      selectedLibraryName: _state.selectedLibraryName,
       songs: const [],
       scanning: false,
     );
