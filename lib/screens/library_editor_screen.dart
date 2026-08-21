@@ -129,8 +129,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       return;
     }
 
-    final selectedPath =
-    await Navigator.of(context).push<String>(
+    final selection = await Navigator.of(context).push<Object>(
       MaterialPageRoute(
         builder: (_) => PathSelectorScreen(
           root: widget.root,
@@ -138,18 +137,55 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       ),
     );
 
-    if (selectedPath == null || !mounted) {
+    if (selection == null || !mounted) {
       return;
     }
 
-    final command = LibraryCommand.create(
-      include: include,
-      path: selectedPath,
-    );
+    if (selection is List<String>) {
+      _addMultipleCommands(include, selection);
+      return;
+    }
+
+    if (selection is String) {
+      final command = LibraryCommand.create(
+        include: include,
+        path: selection,
+      );
+
+      setState(() {
+        _commands.add(command);
+      });
+    }
+  }
+
+  void _addMultipleCommands(bool include, List<String> selectedPaths) {
+    final existingPaths = _commands.map((command) => command.path).toSet();
+    final commandsToAdd = <LibraryCommand>[];
+
+    for (final path in selectedPaths) {
+      final command = LibraryCommand.create(
+        include: include,
+        path: path,
+      );
+      if (existingPaths.add(command.path)) {
+        commandsToAdd.add(command);
+      }
+    }
 
     setState(() {
-      _commands.add(command);
+      _commands.addAll(commandsToAdd);
     });
+
+    final skippedCount = selectedPaths.length - commandsToAdd.length;
+    if (skippedCount > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$skippedCount existing item${skippedCount == 1 ? '' : 's'} skipped.',
+          ),
+        ),
+      );
+    }
   }
 
   void _deleteCommand(int index) {

@@ -27,6 +27,8 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
   late String _currentPath;
 
   List<SafDocumentFile> _entries = [];
+  final Set<String> _selectedPaths = {};
+  bool _bulkSelecting = false;
   bool _loading = true;
   String? _error;
 
@@ -157,13 +159,50 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
   }
 
   void _selectCurrentFolder() {
-    // Root selection is deliberately invalid.
+    // Root selection is deliberately invalid for a single command.
     if (_currentPath.isEmpty) {
       return;
     }
 
     Navigator.of(context).pop(
       _currentPath,
+    );
+  }
+
+  void _enterBulkSelection() {
+    setState(() {
+      _bulkSelecting = true;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _exitBulkSelection() {
+    setState(() {
+      _bulkSelecting = false;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _toggleEntrySelection(SafDocumentFile entry) {
+    final path = _currentPath.isEmpty
+        ? entry.name
+        : '$_currentPath/${entry.name}';
+    final normalizedPath = PathUtils.normalize(path);
+
+    setState(() {
+      if (!_selectedPaths.add(normalizedPath)) {
+        _selectedPaths.remove(normalizedPath);
+      }
+    });
+  }
+
+  void _selectEntries() {
+    if (_selectedPaths.isEmpty) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _selectedPaths.toList()..sort(),
     );
   }
 
@@ -176,19 +215,24 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _currentPath.isEmpty,
+      canPop: !_bulkSelecting && _currentPath.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           return;
         }
-        _goToParent();
+        if (_bulkSelecting) {
+          _exitBulkSelection();
+        } else {
+          _goToParent();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Select Folder'),
+          title: Text(
+            _bulkSelecting ? 'Bulk Select' : 'Select Folder',
+          ),
         ),
         body: Column(
           children: [
@@ -215,7 +259,7 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
           children: [
             IconButton(
               tooltip: 'Go to parent',
-              onPressed: _currentPath.isEmpty
+              onPressed: _bulkSelecting || _currentPath.isEmpty
                   ? null
                   : _goToParent,
               icon: const Icon(
@@ -294,12 +338,25 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: entry.isDir
+          trailing: _bulkSelecting
+              ? Checkbox(
+                  value: _selectedPaths.contains(
+                    PathUtils.normalize(
+                      _currentPath.isEmpty
+                          ? entry.name
+                          : '$_currentPath/${entry.name}',
+                    ),
+                  ),
+                  onChanged: (_) => _toggleEntrySelection(entry),
+                )
+              : entry.isDir
               ? const Icon(
             Icons.chevron_right,
           )
               : null,
-          onTap: entry.isDir
+          onTap: _bulkSelecting
+              ? () => _toggleEntrySelection(entry)
+              : entry.isDir
               ? () => _openDirectory(entry)
               : null,
         );
@@ -311,19 +368,37 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _currentPath.isEmpty
-                ? null
-                : _selectCurrentFolder,
-            icon: const Icon(
-              Icons.check,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_bulkSelecting) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _enterBulkSelection,
+                  icon: const Icon(Icons.checklist),
+                  label: const Text('Bulk Select'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _bulkSelecting
+                    ? (_selectedPaths.isEmpty ? null : _selectEntries)
+                    : (_currentPath.isEmpty ? null : _selectCurrentFolder),
+                icon: Icon(
+                  _bulkSelecting ? Icons.add : Icons.check,
+                ),
+                label: Text(
+                  _bulkSelecting
+                      ? 'Add ${_selectedPaths.length} Item${_selectedPaths.length == 1 ? '' : 's'}'
+                      : 'Select This Folder',
+                ),
+              ),
             ),
-            label: const Text(
-              'Select This Folder',
-            ),
-          ),
+          ],
         ),
       ),
     );

@@ -4,7 +4,7 @@ import 'package:custom_music_player/models/library_command.dart';
 
 void main() {
   test('include command has plus display', () {
-    const command = LibraryCommand(
+    final command = LibraryCommand.create(
       include: true,
       path: 'Anime/Live/',
     );
