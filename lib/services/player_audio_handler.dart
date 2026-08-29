@@ -1,22 +1,41 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 
 import '../models/song.dart';
 import 'path_utils.dart';
+import 'shuffle_order.dart';
 
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final just_audio.AudioPlayer _player = just_audio.AudioPlayer();
+  final ShuffleOrder _shuffleOrder = ShuffleOrder();
 
   List<Song> _songs = const [];
   int? _currentIndex;
   AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
+  bool _shuffleEnabled = false;
 
   Stream<Duration?> get durationStream => _player.durationStream;
 
   Stream<Song?> get currentSongStream => mediaItem.map((_) => currentSong);
 
   int? get currentIndex => _currentIndex;
+
+  int? get queuePosition {
+    if (_currentIndex == null) {
+      return null;
+    }
+
+    if (_shuffleEnabled) {
+      return _shuffleOrder.position;
+    }
+
+    return _currentIndex;
+  }
+
+  bool get shuffleEnabled => _shuffleEnabled;
 
   int get songCount => _songs.length;
 
@@ -32,27 +51,36 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   AudioServiceRepeatMode get repeatMode => _repeatMode;
 
-  bool get canGoPrevious =>
-      _currentIndex != null && _currentIndex! > 0;
+  bool get canGoPrevious {
+    if (_shuffleEnabled) {
+      return _shuffleOrder.canGoPrevious;
+    }
 
-  bool get canGoNext =>
-      _currentIndex != null &&
-          _currentIndex! < _songs.length - 1;
+    return _currentIndex != null && _currentIndex! > 0;
+  }
+
+  bool get canGoNext {
+    if (_shuffleEnabled) {
+      return _shuffleOrder.canGoNext;
+    }
+
+    return _currentIndex != null && _currentIndex! < _songs.length - 1;
+  }
 
   PlayerAudioHandler() {
     _player.playbackEventStream
         .map((event) {
-      final state = _toPlaybackState(event);
+          final state = _toPlaybackState(event);
 
-      debugPrint(
-        '[audio] state: '
+          debugPrint(
+            '[audio] state: '
             'processing=${state.processingState}, '
             'playing=${state.playing}, '
             'position=${state.updatePosition}',
-      );
+          );
 
-      return state;
-    })
+          return state;
+        })
         .listen(playbackState.add);
 
     _player.durationStream.listen((duration) {
@@ -70,7 +98,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
       if (_repeatMode == AudioServiceRepeatMode.one) {
         await _player.seek(Duration.zero);
-        await _player.play();
+        unawaited(_player.play());
         return;
       }
 
@@ -80,9 +108,18 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       }
 
       if (_repeatMode == AudioServiceRepeatMode.all && _songs.isNotEmpty) {
-        _currentIndex = 0;
+        if (_shuffleEnabled) {
+          final previousIndex = _currentIndex;
+
+          _shuffleOrder.reset(_songs.length, avoidFirstIndex: previousIndex);
+
+          _currentIndex = _shuffleOrder.currentIndex;
+        } else {
+          _currentIndex = 0;
+        }
+
         await _loadCurrentSong();
-        await _player.play();
+        unawaited(_player.play());
         return;
       }
 
@@ -91,15 +128,34 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     });
   }
 
-  Future<void> setSongs(List<Song> songs) async {
-    debugPrint('[audio] setSongs: ${songs.length} songs');
+  Future<void> setSongs(List<Song> songs) {
+    return _loadSongs(songs, shuffle: false);
+  }
+
+  Future<void> startShuffle(List<Song> songs) {
+    return _loadSongs(songs, shuffle: true);
+  }
+
+  Future<void> _loadSongs(List<Song> songs, {required bool shuffle}) async {
+    debugPrint(
+      '[audio] loadSongs: ${songs.length} songs, '
+      'shuffle=$shuffle',
+    );
 
     await _player.stop();
     await _player.setSpeed(1.0);
 
-    // Use the already-built library list; do not duplicate it.
+    // Keep the existing built list; only shuffled indices are separate.
     _songs = songs;
-    _currentIndex = songs.isEmpty ? null : 0;
+    _shuffleEnabled = shuffle;
+
+    if (shuffle) {
+      _shuffleOrder.reset(songs.length);
+      _currentIndex = _shuffleOrder.currentIndex;
+    } else {
+      _shuffleOrder.reset(0);
+      _currentIndex = songs.isEmpty ? null : 0;
+    }
 
     if (_currentIndex != null) {
       await _loadCurrentSong();
@@ -107,16 +163,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> setRepeatMode(
-      AudioServiceRepeatMode repeatMode,
-      ) async {
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
     _repeatMode = repeatMode;
 
-    playbackState.add(
-      playbackState.value.copyWith(
-        repeatMode: repeatMode,
-      ),
-    );
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
   }
 
   @override
@@ -145,12 +195,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     final wasPlaying = _player.playing;
-    _currentIndex = _currentIndex! - 1;
+
+    if (_shuffleEnabled) {
+      _currentIndex = _shuffleOrder.movePrevious();
+    } else {
+      _currentIndex = _currentIndex! - 1;
+    }
 
     await _loadCurrentSong();
 
     if (wasPlaying) {
-      await _player.play();
+      unawaited(_player.play());
     }
   }
 
@@ -161,12 +216,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     final wasPlaying = _player.playing;
-    _currentIndex = _currentIndex! + 1;
+
+    if (_shuffleEnabled) {
+      _currentIndex = _shuffleOrder.moveNext();
+    } else {
+      _currentIndex = _currentIndex! + 1;
+    }
 
     await _loadCurrentSong();
 
     if (wasPlaying) {
-      await _player.play();
+      unawaited(_player.play());
     }
   }
 
@@ -187,15 +247,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _publishCurrentMediaItem();
 
     await _player.setAudioSource(
-      just_audio.AudioSource.uri(
-        Uri.parse(song.uri),
-      ),
+      just_audio.AudioSource.uri(Uri.parse(song.uri)),
     );
   }
 
-  void _publishCurrentMediaItem({
-    Duration? duration,
-  }) {
+  void _publishCurrentMediaItem({Duration? duration}) {
     final song = currentSong;
 
     if (song == null) {
@@ -212,15 +268,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  PlaybackState _toPlaybackState(
-      just_audio.PlaybackEvent event,
-      ) {
+  PlaybackState _toPlaybackState(just_audio.PlaybackEvent event) {
     final controls = <MediaControl>[
       if (canGoPrevious) MediaControl.skipToPrevious,
-      if (_player.playing)
-        MediaControl.pause
-      else
-        MediaControl.play,
+      if (_player.playing) MediaControl.pause else MediaControl.play,
       if (canGoNext) MediaControl.skipToNext,
       MediaControl.stop,
     ];
@@ -228,30 +279,26 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return PlaybackState(
       controls: controls,
       repeatMode: _repeatMode,
-      systemActions: const {
-        MediaAction.seek,
-      },
+      shuffleMode: _shuffleEnabled
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
+      systemActions: const {MediaAction.seek},
       androidCompactActionIndices: List.generate(
         controls.length > 3 ? 3 : controls.length,
-            (index) => index,
+        (index) => index,
       ),
       processingState: switch (_player.processingState) {
-        just_audio.ProcessingState.idle =>
-        AudioProcessingState.idle,
-        just_audio.ProcessingState.loading =>
-        AudioProcessingState.loading,
-        just_audio.ProcessingState.buffering =>
-        AudioProcessingState.buffering,
-        just_audio.ProcessingState.ready =>
-        AudioProcessingState.ready,
-        just_audio.ProcessingState.completed =>
-        AudioProcessingState.completed,
+        just_audio.ProcessingState.idle => AudioProcessingState.idle,
+        just_audio.ProcessingState.loading => AudioProcessingState.loading,
+        just_audio.ProcessingState.buffering => AudioProcessingState.buffering,
+        just_audio.ProcessingState.ready => AudioProcessingState.ready,
+        just_audio.ProcessingState.completed => AudioProcessingState.completed,
       },
       playing: _player.playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
-      queueIndex: _currentIndex,
+      queueIndex: queuePosition,
     );
   }
 }

@@ -8,9 +8,8 @@ class PlaybackController {
 
   PlaybackController(this._handler);
 
-  Stream<bool> get playingStream => _handler.playbackState
-      .map((state) => state.playing)
-      .distinct();
+  Stream<bool> get playingStream =>
+      _handler.playbackState.map((state) => state.playing).distinct();
 
   Stream<Duration?> get durationStream => _handler.durationStream;
 
@@ -24,18 +23,21 @@ class PlaybackController {
 
   Stream<Song?> get currentSongStream => _handler.currentSongStream;
 
-  int? get currentIndex => _handler.currentIndex;
+  int? get currentIndex => _handler.queuePosition;
 
   int get songCount => _handler.songCount;
 
   AudioServiceRepeatMode get repeatMode => _handler.repeatMode;
 
-  Stream<AudioServiceRepeatMode> get repeatModeStream => _handler.playbackState
-          .map((state) => state.repeatMode)
-          .distinct();
+  Stream<AudioServiceRepeatMode> get repeatModeStream =>
+      _handler.playbackState.map((state) => state.repeatMode).distinct();
 
   Future<void> setSongs(List<Song> songs) {
     return _handler.setSongs(songs);
+  }
+
+  Future<void> startShuffle(List<Song> songs) {
+    return _handler.startShuffle(songs);
   }
 
   Future<void> play() {

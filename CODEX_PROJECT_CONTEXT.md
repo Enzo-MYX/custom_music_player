@@ -247,6 +247,13 @@ The test scanner was temporarily used as the app home during testing.
 - background audio service
 - notification media controls
 - lock-screen media controls
+- draggable playback seek/progress bar
+- automatic queue advancement
+- repeat off/all/one behavior
+- dedicated shuffle start screen and library selector
+- explicit built-library/rebuild-state tracking
+- randomized index order with non-repeating cycles
+- shuffle integration with Previous, Next, completion, and repeat modes
 
 ## Next stages
 
@@ -320,6 +327,38 @@ Build only the requested practical UI:
 - rebuild
 - shuffle/random
 - repeat
+
+### Playback layout TODOs
+
+- The user has additional changes planned for the Now Playing/playback layout.
+- Defer those layout changes until music metadata is added, so metadata fields
+  and the revised playback design can be implemented together.
+- Collect the exact requested layout changes before treating the playback UI as
+  final.
+- Preserve the tested seek, queue-position, playback-control, repeat, and
+  shuffle behavior while revising the layout.
+- Do not perform speculative playback-layout redesign before those details are
+  provided.
+
+### Main carousel navigation
+
+Replace the single Shuffle home screen with a looping three-page horizontal
+carousel:
+
+1. left: Library Manager;
+2. center and initial page: Shuffle;
+3. right: intentionally empty placeholder for now.
+
+Swiping past either end loops to the opposite end. Programmatic transitions
+between these main sections must use the same horizontal slide rather than
+pushing a standalone replacement screen. Show a small three-position carousel
+indicator at the bottom.
+
+`PlaybackScreen` remains a route above the carousel. Returning from playback
+reveals the carousel. Whenever a song session is loaded, including while paused,
+the carousel displays a floating mini-player that opens `PlaybackScreen`. The
+mini-player can be collapsed into a small icon without stopping or discarding
+the current song.
 
 ## Architectural rules
 
@@ -403,6 +442,7 @@ When continuing:
 8. Run/analyze/test relevant Flutter code after changes.
 9. Work through the staged roadmap rather than jumping to speculative features.
 
-**Immediate task:** implement reliable built-library/rebuild-state tracking,
-then add the dedicated shuffle screen and its library-selection/start flow.
-Keep the already-working lock-screen and notification media controls intact.
+**Immediate task:** preserve the device-tested shuffle/repeat behavior, report
+shuffle status accurately through the media session, then collect and implement
+the user's requested playback-layout changes. Keep the already-working
+lock-screen and notification media controls intact.
