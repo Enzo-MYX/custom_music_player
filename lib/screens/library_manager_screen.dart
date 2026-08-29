@@ -15,10 +15,12 @@ class LibraryManagerScreen extends StatefulWidget {
     super.key,
     required this.manager,
     required this.playbackController,
+    this.loadOnOpen = true,
   });
 
   final LibraryManager manager;
   final PlaybackController playbackController;
+  final bool loadOnOpen;
 
   @override
   State<LibraryManagerScreen> createState() =>
@@ -37,7 +39,12 @@ class _LibraryManagerScreenState
   @override
   void initState() {
     super.initState();
-    _load();
+
+    if (widget.loadOnOpen) {
+      _load();
+    } else {
+      _loading = false;
+    }
   }
 
   Future<void> _load() async {

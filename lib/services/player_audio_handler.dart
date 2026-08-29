@@ -95,6 +95,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     debugPrint('[audio] setSongs: ${songs.length} songs');
 
     await _player.stop();
+    await _player.setSpeed(1.0);
 
     // Use the already-built library list; do not duplicate it.
     _songs = songs;

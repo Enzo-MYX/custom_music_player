@@ -5,7 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'screens/library_manager_screen.dart';
+import 'screens/shuffle_screen.dart';
 import 'services/library_manager.dart';
 import 'services/playback_controller.dart';
 import 'services/player_audio_handler.dart';
@@ -80,7 +80,7 @@ class _MusicPlayerAppState extends State<MusicPlayerApp> {
         ),
         useMaterial3: true,
       ),
-      home: LibraryManagerScreen(
+      home: ShuffleScreen(
         manager: _manager,
         playbackController: widget.playbackController,
       ),
