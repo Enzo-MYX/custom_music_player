@@ -254,111 +254,77 @@ The test scanner was temporarily used as the app home during testing.
 - explicit built-library/rebuild-state tracking
 - randomized index order with non-repeating cycles
 - shuffle integration with Previous, Next, completion, and repeat modes
+- looping three-page home carousel with cube transition and position indicator
+- persistent carousel mini-player, including collapse/expand and draggable icon
+- responsive portrait/landscape playback layouts without overflow
+- five-second rewind/forward and selectable playback speeds
+- current-playlist screen with automatic scrolling to the active track
+- non-shuffle playlist track selection
+- lazy current-track metadata and embedded-artwork extraction through Android
+  `MediaMetadataRetriever` (implemented; broader format/device testing pending)
+- latest-built-library persistence using lightweight song paths and SAF URIs
+  (implemented; restart/invalidation testing pending)
 
 ## Next stages
 
-### Playback refinement — next
+### Built-library persistence validation — next
 
-Foreground and background playback are working with `just_audio` and
-`audio_service`:
-- selected/rebuilt libraries are passed to `PlaybackController`
-- play/pause and previous/next work
-- the foreground service, media notification, and lock-screen media controls
-  are present and working on the test phone
-- debug logging was temporarily added around audio-service startup, loading,
-  and player state to diagnose notification behaviour
+The most recent successfully built library is now serialized separately from
+normal settings. Only its library name, root URI, recipe signature, and each
+song's relative path/SAF URI are stored; metadata and artwork are excluded.
 
-The next requested playback improvement is a **draggable seek/progress bar**
-in the playback screen. It should:
-- show the current position and total duration
-- call the controller/handler seek method when the user drags it
-- stay synchronized with the audio handler's position stream
-- preserve the existing working media-session behaviour
+Still test:
+- build, fully restart, and start shuffle without rescanning;
+- a valid empty built library;
+- switching away from and back to the cached library;
+- invalidation after root changes or edits to the built recipe;
+- preservation after edits to unrelated recipes;
+- rename and deletion of the cached library;
+- corrupt or version-mismatched cache fallback.
 
-After that, add only the remaining requested controls as needed:
-- repeat
-- shuffle/random
+### Metadata and playback validation
 
-### Random playlist
-Use the already-built `List<Song>`:
-- equal opportunity for songs
-- no filesystem rescan for each next song
-- no loading full audio files into memory
-- randomized index/order is acceptable
-- integrate repeat/shuffle behavior
+Current-track metadata is loaded lazily through Android
+`MediaMetadataRetriever`, including title, artist, album, and embedded artwork.
+The lightweight `Song` list does not retain metadata or artwork for every track.
 
-### Dedicated shuffle screen
+Still test and refine:
+- metadata extraction for MP3, FLAC, and other formats actually used;
+- files with missing or malformed tags and missing artwork;
+- rapid Previous/Next changes while metadata extraction is still running;
+- metadata updates in the app, media notification, and lock screen;
+- playback-speed reporting and persistence across track changes;
+- portrait/landscape rotation while playing and paused.
 
-Shuffle/random playback starts from its own simple screen rather than from a
-small toggle on the Now Playing screen.
+### Remaining playback and queue work
 
-The screen has two primary controls:
+- Decide whether shuffled playback should expose its shuffled order as a queue;
+  the queue button is currently disabled during shuffle.
+- Decide whether selecting the currently playing queue row should restart it or
+  only close the queue; it currently closes the queue.
+- Consider caching only small current-track metadata if native extraction delay
+  is noticeable; do not cache artwork for the entire library.
+- Complete lyrics only if explicitly requested; it remains a placeholder.
 
-- a large circular Play button that starts a shuffled session from the
-  currently built library;
-- a compact rectangular library selector positioned roughly 75–80% down the
-  screen, displaying the selected library name and opening a radio-style
-  dropdown containing all saved libraries.
+### Remaining carousel work
 
-Play-button behavior:
+- Decide the purpose of the intentionally empty right-hand carousel page.
+- Test cube transitions and draggable mini-player placement on both target
+  devices and after orientation changes.
+- Decide whether the collapsed state and draggable icon position should persist
+  between app launches.
 
-- if no library is selected, open `LibraryManagerScreen`;
-- if the current selection needs rebuilding and was not explicitly chosen
-  through the shuffle screen selector, open `LibraryManagerScreen`;
-- selecting a library through the dropdown makes it the pending selection;
-- pressing Play after an explicit dropdown selection automatically rebuilds
-  that library when necessary, then starts shuffle and opens Now Playing;
-- if the selected library already has a current build, start shuffle without
-  rescanning.
+### Cleanup and release
 
-Build validity must be tracked explicitly rather than inferred from
-`songs.isEmpty`, because an empty library can be a legitimate completed build.
-Track the library associated with the in-memory built song list and invalidate
-it when its root, recipe, or selected library changes.
-
-### Final simple music-player UI
-Build only the requested practical UI:
-- Now Playing
-- queue/current song
-- playback controls
-- seek bar
-- song information
-- library selection
-- rebuild
-- shuffle/random
-- repeat
-
-### Playback layout TODOs
-
-- The user has additional changes planned for the Now Playing/playback layout.
-- Defer those layout changes until music metadata is added, so metadata fields
-  and the revised playback design can be implemented together.
-- Collect the exact requested layout changes before treating the playback UI as
-  final.
-- Preserve the tested seek, queue-position, playback-control, repeat, and
-  shuffle behavior while revising the layout.
-- Do not perform speculative playback-layout redesign before those details are
-  provided.
-
-### Main carousel navigation
-
-Replace the single Shuffle home screen with a looping three-page horizontal
-carousel:
-
-1. left: Library Manager;
-2. center and initial page: Shuffle;
-3. right: intentionally empty placeholder for now.
-
-Swiping past either end loops to the opposite end. Programmatic transitions
-between these main sections must use the same horizontal slide rather than
-pushing a standalone replacement screen. Show a small three-position carousel
-indicator at the bottom.
-
-`PlaybackScreen` remains a route above the carousel. Returning from playback
-reveals the carousel. Whenever a song session is loaded, including while paused,
-the carousel displays a floating mini-player that opens `PlaybackScreen`. The
-mini-player can be collapsed into a small icon without stopping or discarding
-the current song.
+- Remove temporary audio-service and player `debugPrint` logging.
+- Delete unreferenced temporary scanner/settings test screens if still present.
+- Run `flutter analyze` and resolve warnings and unused imports.
+- Run the complete unit/widget test suite.
+- Perform regression testing for large/empty libraries, stale rebuild routing,
+  repeat modes, full shuffle cycles, notification controls, lock-screen
+  controls, backgrounding, reopening, and SAF permission persistence.
+- Test on the target phone and Xiaomi tablet.
+- Configure release signing and produce the release APK.
 
 ## Architectural rules
 
@@ -442,7 +408,7 @@ When continuing:
 8. Run/analyze/test relevant Flutter code after changes.
 9. Work through the staged roadmap rather than jumping to speculative features.
 
-**Immediate task:** preserve the device-tested shuffle/repeat behavior, report
-shuffle status accurately through the media session, then collect and implement
-the user's requested playback-layout changes. Keep the already-working
-lock-screen and notification media controls intact.
+**Immediate task:** device-test the newly implemented built-library persistence,
+including restart restoration and every invalidation path. Then validate lazy
+metadata extraction across the user's actual audio formats while preserving the
+tested playback, shuffle/repeat, notification, and lock-screen behavior.

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:saf/saf.dart';
 
 import '../models/app_settings.dart';
+import '../models/built_library_cache.dart';
 import '../models/library_state.dart';
 import '../models/music_library.dart';
 import '../models/song.dart';
@@ -23,15 +26,29 @@ class LibraryManager {
 
   Future<void> load() async {
     final settings = await _storage.load();
+    final cache = await _storage.loadBuiltLibrary();
+
     String? selectedLibraryName;
+
     if (settings.libraries.isNotEmpty) {
       selectedLibraryName = settings.libraries.first.name;
     }
+
+    String? builtLibraryName;
+    List<Song> songs = const [];
+
+    if (cache != null && _isCacheValid(cache, settings)) {
+      builtLibraryName = cache.libraryName;
+      songs = cache.songs;
+    } else if (cache != null) {
+      await _storage.clearBuiltLibrary();
+    }
+
     _state = LibraryState(
       settings: settings,
       selectedLibraryName: selectedLibraryName,
-      builtLibraryName: null,
-      songs: const [],
+      builtLibraryName: builtLibraryName,
+      songs: songs,
       scanning: false,
     );
   }
@@ -47,6 +64,7 @@ class LibraryManager {
     );
 
     await _storage.save(newSettings);
+    await _storage.clearBuiltLibrary();
 
     _state = LibraryState(
       settings: newSettings,
@@ -73,10 +91,12 @@ class LibraryManager {
 
   Future<void> selectLibrary(String name) async {
     final exists = _state.settings.libraries.any(
-      (library) => library.name == name,
+          (library) => library.name == name,
     );
     if (!exists) {
-      throw ArgumentError('Library "$name" does not exist.');
+      throw ArgumentError(
+        'Library "$name" does not exist.',
+      );
     }
     if (_state.selectedLibraryName == name) {
       return;
@@ -84,8 +104,8 @@ class LibraryManager {
     _state = LibraryState(
       settings: _state.settings,
       selectedLibraryName: name,
-      builtLibraryName: null,
-      songs: const [],
+      builtLibraryName: _state.builtLibraryName,
+      songs: _state.songs,
       scanning: false,
     );
   }
@@ -131,12 +151,23 @@ class LibraryManager {
       libraries: newLibraries,
     );
     await _storage.save(newSettings);
-    final updatesSelected = library.name == _state.selectedLibraryName;
+
+    final invalidatesBuiltLibrary =
+        library.name == _state.builtLibraryName;
+
+    if (invalidatesBuiltLibrary) {
+      await _storage.clearBuiltLibrary();
+    }
+
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: _state.selectedLibraryName,
-      builtLibraryName: updatesSelected ? null : _state.builtLibraryName,
-      songs: updatesSelected ? const [] : _state.songs,
+      builtLibraryName: invalidatesBuiltLibrary
+          ? null
+          : _state.builtLibraryName,
+      songs: invalidatesBuiltLibrary
+          ? const []
+          : _state.songs,
       scanning: false,
     );
   }
@@ -177,6 +208,14 @@ class LibraryManager {
     final newBuiltName = _state.builtLibraryName == oldName
         ? trimmedName
         : _state.builtLibraryName;
+    if (_state.builtLibraryName == oldName &&
+        newBuiltName != null) {
+      await _persistBuiltLibrary(
+        settings: newSettings,
+        libraryName: newBuiltName,
+        songs: _state.songs,
+      );
+    }
 
     _state = LibraryState(
       settings: newSettings,
@@ -207,11 +246,15 @@ class LibraryManager {
     }
 
     final deletedSelected = _state.selectedLibraryName == name;
+    final deletedBuiltLibrary = _state.builtLibraryName == name;
+    if (deletedBuiltLibrary) {
+      await _storage.clearBuiltLibrary();
+    }
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: newSelectedName,
-      builtLibraryName: deletedSelected ? null : _state.builtLibraryName,
-      songs: deletedSelected ? const [] : _state.songs,
+      builtLibraryName: deletedBuiltLibrary ? null : _state.builtLibraryName,
+      songs: deletedBuiltLibrary ? const [] : _state.songs,
       scanning: false,
     );
   }
@@ -235,10 +278,17 @@ class LibraryManager {
     );
     try {
       final songs = await _scanner.rebuild(root, library);
+      final builtLibraryName = _state.selectedLibraryName!;
+
+      await _persistBuiltLibrary(
+        settings: _state.settings,
+        libraryName: builtLibraryName,
+        songs: songs,
+      );
       _state = LibraryState(
         settings: _state.settings,
         selectedLibraryName: _state.selectedLibraryName,
-        builtLibraryName: _state.selectedLibraryName,
+        builtLibraryName: builtLibraryName,
         songs: songs,
         scanning: false,
       );
@@ -253,5 +303,68 @@ class LibraryManager {
       );
       rethrow;
     }
+  }
+
+  String _librarySignature(MusicLibrary library) {
+    return jsonEncode(library.toJson());
+  }
+
+  MusicLibrary? _findLibrary(
+      AppSettings settings,
+      String name,
+      ) {
+    for (final library in settings.libraries) {
+      if (library.name == name) {
+        return library;
+      }
+    }
+
+    return null;
+  }
+
+  bool _isCacheValid(
+      BuiltLibraryCache cache,
+      AppSettings settings,
+      ) {
+    if (cache.rootUri != settings.rootUri) {
+      return false;
+    }
+
+    final library = _findLibrary(
+      settings,
+      cache.libraryName,
+    );
+
+    if (library == null) {
+      return false;
+    }
+
+    return cache.librarySignature ==
+        _librarySignature(library);
+  }
+
+  Future<void> _persistBuiltLibrary({
+    required AppSettings settings,
+    required String libraryName,
+    required List<Song> songs,
+  }) async {
+    final library = _findLibrary(
+      settings,
+      libraryName,
+    );
+
+    if (library == null) {
+      await _storage.clearBuiltLibrary();
+      return;
+    }
+
+    await _storage.saveBuiltLibrary(
+      BuiltLibraryCache(
+        rootUri: settings.rootUri,
+        libraryName: libraryName,
+        librarySignature: _librarySignature(library),
+        songs: songs,
+      ),
+    );
   }
 }
