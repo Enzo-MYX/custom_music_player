@@ -11,10 +11,14 @@ class ShuffleScreen extends StatefulWidget {
     super.key,
     required this.manager,
     required this.playbackController,
+    this.loadOnOpen = true,
+    this.onOpenLibraryManager,
   });
 
   final LibraryManager manager;
   final PlaybackController playbackController;
+  final bool loadOnOpen;
+  final Future<void> Function()? onOpenLibraryManager;
 
   @override
   State<ShuffleScreen> createState() => _ShuffleScreenState();
@@ -29,7 +33,12 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+
+    if (widget.loadOnOpen) {
+      _load();
+    } else {
+      _loading = false;
+    }
   }
 
   Future<void> _load() async {
@@ -70,6 +79,22 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
   }
 
   Future<void> _openLibraryManager() async {
+    final carouselNavigation = widget.onOpenLibraryManager;
+
+    if (carouselNavigation != null) {
+      await carouselNavigation();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedThroughDropdown = false;
+      });
+
+      return;
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => LibraryManagerScreen(

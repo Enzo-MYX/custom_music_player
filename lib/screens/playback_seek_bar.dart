@@ -5,12 +5,14 @@ typedef SeekCallback = Future<void> Function(Duration position);
 class PlaybackSeekBar extends StatefulWidget {
   final Stream<Duration?> durationStream;
   final Stream<Duration> positionStream;
+  final Duration initialPosition;
   final SeekCallback onSeek;
 
   const PlaybackSeekBar({
     super.key,
     required this.durationStream,
     required this.positionStream,
+    required this.initialPosition,
     required this.onSeek,
   });
 
@@ -33,6 +35,7 @@ class _PlaybackSeekBarState extends State<PlaybackSeekBar> {
 
         return StreamBuilder<Duration>(
           stream: widget.positionStream,
+          initialData: widget.initialPosition,
           builder: (context, positionSnapshot) {
             final streamedPosition = positionSnapshot.data ?? Duration.zero;
             final displayedPosition = _clampPosition(

@@ -19,6 +19,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Stream<Duration?> get durationStream => _player.durationStream;
 
+  Duration get position => _player.position;
+
   Stream<Song?> get currentSongStream => mediaItem.map((_) => currentSong);
 
   int? get currentIndex => _currentIndex;

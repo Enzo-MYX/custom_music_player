@@ -67,6 +67,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     return PlaybackSeekBar(
       durationStream: widget.controller.durationStream,
       positionStream: widget.controller.positionStream,
+      initialPosition: widget.controller.position,
       onSeek: widget.controller.seek,
     );
   }

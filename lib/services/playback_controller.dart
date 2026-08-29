@@ -15,6 +15,8 @@ class PlaybackController {
 
   Stream<Duration> get positionStream => AudioService.position;
 
+  Duration get position => _handler.position;
+
   Song? get currentSong => _handler.currentSong;
 
   bool get canGoPrevious => _handler.canGoPrevious;
