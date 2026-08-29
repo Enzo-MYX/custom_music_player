@@ -1,16 +1,25 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as just_audio;
 
 import '../models/song.dart';
+import '../models/song_metadata.dart';
+import 'metadata_reader.dart';
 import 'path_utils.dart';
 import 'shuffle_order.dart';
 
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   final just_audio.AudioPlayer _player = just_audio.AudioPlayer();
   final ShuffleOrder _shuffleOrder = ShuffleOrder();
+  final MetadataReader _metadataReader = MetadataReader();
+
+  final StreamController<SongMetadata?> _metadataController =
+  StreamController<SongMetadata?>.broadcast();
+
+  SongMetadata? _currentMetadata;
 
   List<Song> _songs = const [];
   int? _currentIndex;
@@ -21,9 +30,22 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Duration get position => _player.position;
 
+  Duration? get duration => _player.duration;
+
+  double get speed => _player.speed;
+
+  bool get playing => _player.playing;
+
+  UnmodifiableListView<Song> get songs => UnmodifiableListView(_songs);
+
   Stream<Song?> get currentSongStream => mediaItem.map((_) => currentSong);
 
   int? get currentIndex => _currentIndex;
+
+  SongMetadata? get currentMetadata => _currentMetadata;
+
+  Stream<SongMetadata?> get currentMetadataStream =>
+      _metadataController.stream;
 
   int? get queuePosition {
     if (_currentIndex == null) {
@@ -180,6 +202,26 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     await _player.play();
   }
 
+  Future<void> playAt(int index) async {
+    if (_shuffleEnabled) {
+      return;
+    }
+
+    if (index < 0 || index >= _songs.length) {
+      throw RangeError.index(index, _songs, 'index');
+    }
+
+    final wasPlaying = _player.playing;
+
+    _currentIndex = index;
+
+    await _loadCurrentSong();
+
+    if (wasPlaying) {
+      unawaited(_player.play());
+    }
+  }
+
   @override
   Future<void> pause() {
     return _player.pause();
@@ -188,6 +230,15 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> seek(Duration position) {
     return _player.seek(position);
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    await _player.setSpeed(speed);
+
+    playbackState.add(
+      _toPlaybackState(_player.playbackEvent),
+    );
   }
 
   @override
@@ -237,8 +288,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return _player.stop();
   }
 
-  Future<void> dispose() {
-    return _player.dispose();
+  Future<void> dispose() async {
+    await _player.dispose();
+    await _metadataController.close();
   }
 
   Future<void> _loadCurrentSong() async {
@@ -246,14 +298,40 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
     debugPrint('[audio] loading: ${song.relativePath}');
 
+    _currentMetadata = null;
+    _metadataController.add(null);
+
     _publishCurrentMediaItem();
 
     await _player.setAudioSource(
       just_audio.AudioSource.uri(Uri.parse(song.uri)),
     );
+
+    unawaited(_loadCurrentMetadata(song));
   }
 
-  void _publishCurrentMediaItem({Duration? duration}) {
+  Future<void> _loadCurrentMetadata(Song song) async {
+    final metadata = await _metadataReader.read(song);
+
+    // Ignore a result if another track was selected while extraction
+    // was still running.
+    if (currentSong?.uri != song.uri) {
+      return;
+    }
+
+    _currentMetadata = metadata;
+    _metadataController.add(metadata);
+
+    _publishCurrentMediaItem(
+      duration: _player.duration,
+      metadata: metadata,
+    );
+  }
+
+  void _publishCurrentMediaItem({
+    Duration? duration,
+    SongMetadata? metadata,
+  }) {
     final song = currentSong;
 
     if (song == null) {
@@ -263,9 +341,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(
       MediaItem(
         id: song.uri,
-        title: PathUtils.basename(song.relativePath),
-        album: PathUtils.parent(song.relativePath),
+        title:
+        metadata?.title ?? PathUtils.basename(song.relativePath),
+        artist:
+        metadata?.artist ??
+            metadata?.albumArtist ??
+            'Unknown artist',
+        album:
+        metadata?.album ?? PathUtils.parent(song.relativePath),
         duration: duration,
+        extras: {
+          if (metadata?.trackNumber != null)
+            'trackNumber': metadata!.trackNumber,
+          if (metadata?.year != null)
+            'year': metadata!.year,
+        },
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:collection';
+
 import 'package:audio_service/audio_service.dart';
 
 import '../models/song.dart';
+import '../models/song_metadata.dart';
 import 'player_audio_handler.dart';
 
 class PlaybackController {
@@ -17,6 +20,19 @@ class PlaybackController {
 
   Duration get position => _handler.position;
 
+  Duration? get duration => _handler.duration;
+
+  double get speed => _handler.speed;
+
+  bool get playing => _handler.playing;
+
+  bool get shuffleEnabled => _handler.shuffleEnabled;
+
+  UnmodifiableListView<Song> get songs => _handler.songs;
+
+  Stream<double> get speedStream =>
+      _handler.playbackState.map((state) => state.speed).distinct();
+
   Song? get currentSong => _handler.currentSong;
 
   bool get canGoPrevious => _handler.canGoPrevious;
@@ -28,6 +44,11 @@ class PlaybackController {
   int? get currentIndex => _handler.queuePosition;
 
   int get songCount => _handler.songCount;
+
+  SongMetadata? get currentMetadata => _handler.currentMetadata;
+
+  Stream<SongMetadata?> get currentMetadataStream =>
+      _handler.currentMetadataStream;
 
   AudioServiceRepeatMode get repeatMode => _handler.repeatMode;
 
@@ -46,12 +67,43 @@ class PlaybackController {
     return _handler.play();
   }
 
+  Future<void> playAt(int index) {
+    return _handler.playAt(index);
+  }
+
   Future<void> pause() {
     return _handler.pause();
   }
 
   Future<void> seek(Duration position) {
     return _handler.seek(position);
+  }
+
+  Future<void> seekBy(Duration offset) {
+    final duration = _handler.duration;
+    var target = _handler.position + offset;
+
+    if (target.isNegative) {
+      target = Duration.zero;
+    }
+
+    if (duration != null && target > duration) {
+      target = duration;
+    }
+
+    return _handler.seek(target);
+  }
+
+  Future<void> rewindFiveSeconds() {
+    return seekBy(const Duration(seconds: -5));
+  }
+
+  Future<void> forwardFiveSeconds() {
+    return seekBy(const Duration(seconds: 5));
+  }
+
+  Future<void> setSpeed(double speed) {
+    return _handler.setSpeed(speed);
   }
 
   Future<void> previous() {
