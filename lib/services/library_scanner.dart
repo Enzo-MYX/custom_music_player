@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:saf/saf.dart';
 
 import '../models/music_library.dart';
@@ -55,7 +56,7 @@ class LibraryScanner {
       } else {
         if (matcher.shouldInclude(relativePath)) {
           songs.add(
-            Song(relativePath: relativePath),
+            Song(relativePath: relativePath, uri: entry.uri),
           );
         }
       }

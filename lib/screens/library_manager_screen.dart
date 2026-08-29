@@ -2,19 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:saf/saf.dart';
 
 import 'library_editor_screen.dart';
+import 'playback_screen.dart';
 import '../models/build_mode.dart';
 import '../models/library_command.dart';
 import '../models/library_state.dart';
 import '../models/music_library.dart';
 import '../services/library_manager.dart';
+import '../services/playback_controller.dart';
 
 class LibraryManagerScreen extends StatefulWidget {
   const LibraryManagerScreen({
     super.key,
     required this.manager,
+    required this.playbackController,
   });
 
   final LibraryManager manager;
+  final PlaybackController playbackController;
 
   @override
   State<LibraryManagerScreen> createState() =>
@@ -244,7 +248,8 @@ class _LibraryManagerScreenState
     try {
       setState(() {});
 
-      await _manager.rebuildSelectedLibrary();
+      final songs = await _manager.rebuildSelectedLibrary();
+      await widget.playbackController.setSongs(songs);
 
       if (!mounted) {
         return;
@@ -269,6 +274,16 @@ class _LibraryManagerScreenState
 
       _showError(e.toString());
     }
+  }
+
+  Future<void> _openPlayer() {
+    return Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaybackScreen(
+          controller: widget.playbackController,
+        ),
+      ),
+    );
   }
 
   Future<String?> _showLibraryNameDialog({
@@ -533,6 +548,14 @@ class _LibraryManagerScreenState
                     : 'Rebuild Library',
               ),
             ),
+            if (_state.songs.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _openPlayer,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Open Player'),
+              ),
+            ],
           ],
         ),
       ),

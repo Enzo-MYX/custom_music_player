@@ -142,50 +142,109 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
     }
 
     if (selection is List<String>) {
-      _addMultipleCommands(include, selection);
+      await _addCommands(include, selection);
       return;
     }
 
     if (selection is String) {
-      final command = LibraryCommand.create(
-        include: include,
-        path: selection,
-      );
-
-      setState(() {
-        _commands.add(command);
-      });
+      await _addCommands(include, [selection]);
     }
   }
 
-  void _addMultipleCommands(bool include, List<String> selectedPaths) {
-    final existingPaths = _commands.map((command) => command.path).toSet();
+  Future<void> _addCommands(
+      bool requestedInclude,
+      List<String> selectedPaths,
+      ) async {
     final commandsToAdd = <LibraryCommand>[];
+    final conflictingPaths = <String>[];
 
     for (final path in selectedPaths) {
       final command = LibraryCommand.create(
-        include: include,
+        include: requestedInclude,
         path: path,
       );
-      if (existingPaths.add(command.path)) {
+
+      final alreadyExists = _commands.any(
+            (existing) => existing.path == command.path,
+      );
+
+      if (alreadyExists) {
+        conflictingPaths.add(command.path);
+      } else {
         commandsToAdd.add(command);
       }
     }
 
-    setState(() {
-      _commands.addAll(commandsToAdd);
-    });
-
-    final skippedCount = selectedPaths.length - commandsToAdd.length;
-    if (skippedCount > 0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$skippedCount existing item${skippedCount == 1 ? '' : 's'} skipped.',
-          ),
-        ),
-      );
+    if (commandsToAdd.isNotEmpty) {
+      setState(() {
+        _commands.addAll(commandsToAdd);
+      });
     }
+
+    if (conflictingPaths.isEmpty || !mounted) {
+      return;
+    }
+
+    final resolvedInclude = await _showConflictResolutionDialog(
+      conflictingPaths,
+    );
+
+    if (resolvedInclude == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      for (final path in conflictingPaths) {
+        final existingIndex = _commands.indexWhere(
+              (command) => command.path == path,
+        );
+
+        if (existingIndex == -1) {
+          continue;
+        }
+
+        _commands[existingIndex] = LibraryCommand.create(
+          include: resolvedInclude,
+          path: path,
+        );
+      }
+    });
+  }
+
+  Future<bool?> _showConflictResolutionDialog(
+      List<String> conflictingPaths,
+      ) {
+    final isSinglePath = conflictingPaths.length == 1;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Resolve Existing Commands'),
+          content: Text(
+            isSinglePath
+                ? '"${conflictingPaths.first}" already has a command. '
+                'Choose the rule that should apply.'
+                : '${conflictingPaths.length} selected paths already have '
+                'commands. Choose one rule to apply to all of them.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Skip'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Exclude'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Include'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _deleteCommand(int index) {
