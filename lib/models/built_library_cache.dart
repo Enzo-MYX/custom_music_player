@@ -32,10 +32,10 @@ class BuiltLibraryCache {
       librarySignature: json['librarySignature'] as String,
       songs: songsJson
           .map(
-            (entry) => Song.fromJson(
-          Map<String, dynamic>.from(entry as Map),
-        ),
-      )
+            (entry) => Song.fromJson(Map<String, dynamic>.from(entry as Map)),
+          )
+          // Older caches may contain sidecar files from before lyrics support.
+          .where((song) => !song.relativePath.toLowerCase().endsWith('.lrc'))
           .toList(growable: false),
     );
   }

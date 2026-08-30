@@ -7,12 +7,10 @@ import '../services/path_utils.dart';
 import '../services/playback_controller.dart';
 import 'playback_queue_screen.dart';
 import 'playback_seek_bar.dart';
+import 'song_lyrics_view.dart';
 
 class PlaybackScreen extends StatefulWidget {
-  const PlaybackScreen({
-    super.key,
-    required this.controller,
-  });
+  const PlaybackScreen({super.key, required this.controller});
 
   final PlaybackController controller;
 
@@ -21,14 +19,7 @@ class PlaybackScreen extends StatefulWidget {
 }
 
 class _PlaybackScreenState extends State<PlaybackScreen> {
-  static const List<double> _playbackSpeeds = [
-    0.5,
-    0.75,
-    1.0,
-    1.25,
-    1.5,
-    2.0,
-  ];
+  static const List<double> _playbackSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
   Future<void> _run(Future<void> action) async {
     await action;
@@ -45,9 +36,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PlaybackQueueScreen(
-          controller: widget.controller,
-        ),
+        builder: (_) => PlaybackQueueScreen(controller: widget.controller),
       ),
     );
   }
@@ -61,22 +50,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         final song = snapshot.data;
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Now Playing'),
-          ),
+          appBar: AppBar(title: const Text('Now Playing')),
           body: song == null
-              ? const Center(
-            child: Text('No song loaded.'),
-          )
+              ? const Center(child: Text('No song loaded.'))
               : OrientationBuilder(
-            builder: (context, orientation) {
-              if (orientation == Orientation.landscape) {
-                return _buildLandscape(song);
-              }
+                  builder: (context, orientation) {
+                    if (orientation == Orientation.landscape) {
+                      return _buildLandscape(song);
+                    }
 
-              return _buildPortrait(song);
-            },
-          ),
+                    return _buildPortrait(song);
+                  },
+                ),
         );
       },
     );
@@ -102,7 +87,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   const SizedBox(height: 20),
                   _buildMetadata(song),
                   const SizedBox(height: 24),
-                  _buildLyricsPlaceholder(height: 120),
+                  _buildLyrics(height: 160),
                   const SizedBox(height: 24),
                   _buildSeekBar(),
                   const SizedBox(height: 12),
@@ -123,8 +108,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         builder: (context, constraints) {
           const minimumContentHeight = 340.0;
 
-          final contentHeight =
-          constraints.maxHeight < minimumContentHeight
+          final contentHeight = constraints.maxHeight < minimumContentHeight
               ? minimumContentHeight
               : constraints.maxHeight;
 
@@ -139,10 +123,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          flex: 4,
-                          child: _buildArtwork(),
-                        ),
+                        Expanded(flex: 4, child: _buildArtwork()),
                         const SizedBox(width: 24),
                         Expanded(
                           flex: 5,
@@ -151,9 +132,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                             children: [
                               _buildMetadata(song),
                               const SizedBox(height: 8),
-                              Expanded(
-                                child: _buildLyricsPlaceholder(),
-                              ),
+                              Expanded(child: _buildLyrics()),
                             ],
                           ),
                         ),
@@ -182,9 +161,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
 
         return Container(
           height: height,
-          constraints: const BoxConstraints(
-            minHeight: 120,
-          ),
+          constraints: const BoxConstraints(minHeight: 120),
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -192,25 +169,22 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
           ),
           child: artwork == null
               ? Center(
-            child: Icon(
-              Icons.album,
-              size: 96,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          )
+                  child: Icon(
+                    Icons.album,
+                    size: 96,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                )
               : Image.memory(
-            artwork,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) {
-              return const Center(
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  size: 72,
+                  artwork,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Icon(Icons.broken_image_outlined, size: 72),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         );
       },
     );
@@ -223,19 +197,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       builder: (context, snapshot) {
         final metadata = snapshot.data;
 
-        final title =
-            metadata?.title ?? PathUtils.basename(song.relativePath);
+        final title = metadata?.title ?? PathUtils.basename(song.relativePath);
 
         final artist =
-            metadata?.artist ??
-                metadata?.albumArtist ??
-                'Unknown artist';
+            metadata?.artist ?? metadata?.albumArtist ?? 'Unknown artist';
 
         final album =
             metadata?.album ??
-                (PathUtils.parent(song.relativePath).isEmpty
-                    ? 'Unknown album'
-                    : PathUtils.parent(song.relativePath));
+            (PathUtils.parent(song.relativePath).isEmpty
+                ? 'Unknown album'
+                : PathUtils.parent(song.relativePath));
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -252,8 +223,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color:
-                Theme.of(context).colorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 4),
@@ -266,7 +236,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             const SizedBox(height: 4),
             Text(
               '${(widget.controller.currentIndex ?? 0) + 1} '
-                  'of ${widget.controller.songCount}',
+              'of ${widget.controller.songCount}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -275,23 +245,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     );
   }
 
-  Widget _buildLyricsPlaceholder({double? height}) {
-    return Container(
+  Widget _buildLyrics({double? height}) {
+    return SongLyricsView(
       height: height,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Text(
-          'No lyrics',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ),
+      metadataStream: widget.controller.currentMetadataStream,
+      initialMetadata: widget.controller.currentMetadata,
+      positionStream: widget.controller.positionStream,
     );
   }
 
@@ -304,15 +263,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     );
   }
 
-  Widget _buildControls({
-    required bool landscape,
-  }) {
+  Widget _buildControls({required bool landscape}) {
     return StreamBuilder<AudioServiceRepeatMode>(
       stream: widget.controller.repeatModeStream,
       initialData: widget.controller.repeatMode,
       builder: (context, repeatSnapshot) {
-        final repeatMode =
-            repeatSnapshot.data ?? AudioServiceRepeatMode.none;
+        final repeatMode = repeatSnapshot.data ?? AudioServiceRepeatMode.none;
 
         return StreamBuilder<double>(
           stream: widget.controller.speedStream,
@@ -356,11 +312,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _rewindButton(),
-            _speedButton(speed),
-            _forwardButton(),
-          ],
+          children: [_rewindButton(), _speedButton(speed), _forwardButton()],
         ),
         const SizedBox(height: 8),
         Row(
@@ -434,8 +386,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       tooltip: 'Previous',
       onPressed: widget.controller.canGoPrevious
           ? () {
-        _run(widget.controller.previous());
-      }
+              _run(widget.controller.previous());
+            }
           : null,
       icon: const Icon(Icons.skip_previous),
     );
@@ -456,17 +408,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       tooltip: isPlaying ? 'Pause' : 'Play',
       iconSize: 54,
       onPressed: () {
-        _run(
-          isPlaying
-              ? widget.controller.pause()
-              : widget.controller.play(),
-        );
+        _run(isPlaying ? widget.controller.pause() : widget.controller.play());
       },
-      icon: Icon(
-        isPlaying
-            ? Icons.pause_circle
-            : Icons.play_circle,
-      ),
+      icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle),
     );
   }
 
@@ -485,8 +429,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       tooltip: 'Next',
       onPressed: widget.controller.canGoNext
           ? () {
-        _run(widget.controller.next());
-      }
+              _run(widget.controller.next());
+            }
           : null,
       icon: const Icon(Icons.skip_next),
     );
@@ -540,14 +484,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   Widget _queueButton() {
-    final disabled = widget.controller.shuffleEnabled;
-
-    return IconButton(
-      tooltip: disabled
-          ? 'Playlist unavailable during shuffle'
-          : 'Current playlist',
-      onPressed: disabled ? null : _openQueue,
-      icon: const Icon(Icons.queue_music),
+    return Visibility(
+      visible: !widget.controller.shuffleEnabled,
+      maintainAnimation: true,
+      maintainSize: true,
+      maintainState: true,
+      child: IconButton(
+        tooltip: 'Current playlist',
+        onPressed: _openQueue,
+        icon: const Icon(Icons.queue_music),
+      ),
     );
   }
 

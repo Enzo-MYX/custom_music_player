@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'screens/home_carousel_screen.dart';
 import 'services/library_manager.dart';
@@ -12,36 +12,57 @@ import 'services/player_audio_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final notificationStatus = await Permission.notification.request();
-  debugPrint('[audio] notification permission: $notificationStatus');
+
+  final notificationStatus =
+  await Permission.notification.request();
+
+  debugPrint(
+    '[audio] notification permission: $notificationStatus',
+  );
 
   final playerAudioHandler = PlayerAudioHandler();
+
   debugPrint('[audio] creating AudioService');
 
   final registeredAudioHandler = await AudioService.init(
     builder: () => playerAudioHandler,
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.custom_music_player.playback',
+      androidNotificationChannelId:
+      'com.example.custom_music_player.playback',
       androidNotificationChannelName: 'Music playback',
+
+      androidStopForegroundOnPause: false,
+
+      notificationColor: Color(0xFF6750A4),
     ),
   );
+
   debugPrint(
     '[audio] AudioService initialized; '
-    'sameHandler=${identical(registeredAudioHandler, playerAudioHandler)}',
+        'sameHandler='
+        '${identical(registeredAudioHandler, playerAudioHandler)}',
   );
 
   runApp(
-    MusicPlayerApp(playbackController: PlaybackController(playerAudioHandler)),
+    MusicPlayerApp(
+      playbackController: PlaybackController(
+        playerAudioHandler,
+      ),
+    ),
   );
 }
 
 class MusicPlayerApp extends StatefulWidget {
   final PlaybackController playbackController;
 
-  const MusicPlayerApp({super.key, required this.playbackController});
+  const MusicPlayerApp({
+    super.key,
+    required this.playbackController,
+  });
 
   @override
-  State<MusicPlayerApp> createState() => _MusicPlayerAppState();
+  State<MusicPlayerApp> createState() =>
+      _MusicPlayerAppState();
 }
 
 class _MusicPlayerAppState extends State<MusicPlayerApp> {
@@ -65,7 +86,9 @@ class _MusicPlayerAppState extends State<MusicPlayerApp> {
     return MaterialApp(
       title: 'Custom Music Player',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+        ),
         useMaterial3: true,
       ),
       home: HomeCarouselScreen(

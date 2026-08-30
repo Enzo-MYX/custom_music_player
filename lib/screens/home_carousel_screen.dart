@@ -5,22 +5,17 @@ import 'package:flutter/physics.dart';
 
 import '../services/library_manager.dart';
 import '../services/playback_controller.dart';
+import 'folder_browser_screen.dart';
 import 'library_manager_screen.dart';
 import 'playback_screen.dart';
 import 'shuffle_screen.dart';
 
 class SensitivePageScrollPhysics extends PageScrollPhysics {
-  const SensitivePageScrollPhysics({
-    super.parent,
-  });
+  const SensitivePageScrollPhysics({super.parent});
 
   @override
-  SensitivePageScrollPhysics applyTo(
-      ScrollPhysics? ancestor,
-      ) {
-    return SensitivePageScrollPhysics(
-      parent: buildParent(ancestor),
-    );
+  SensitivePageScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return SensitivePageScrollPhysics(parent: buildParent(ancestor));
   }
 
   @override
@@ -30,11 +25,8 @@ class SensitivePageScrollPhysics extends PageScrollPhysics {
   double get minFlingVelocity => 50;
 
   @override
-  SpringDescription get spring => const SpringDescription(
-    mass: 0.35,
-    stiffness: 300,
-    damping: 30,
-  );
+  SpringDescription get spring =>
+      const SpringDescription(mass: 0.35, stiffness: 300, damping: 30);
 }
 
 class HomeCarouselScreen extends StatefulWidget {
@@ -120,9 +112,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   Future<void> _openPlaybackScreen() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PlaybackScreen(
-          controller: widget.playbackController,
-        ),
+        builder: (_) => PlaybackScreen(controller: widget.playbackController),
       ),
     );
   }
@@ -142,7 +132,16 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
         loadOnOpen: false,
         onOpenLibraryManager: _showLibraryManager,
       ),
-      _ => const Scaffold(),
+      _ => FolderBrowserScreen(
+        // Including the root URI recreates the browser after the configured
+        // global root changes.
+        key: ValueKey(
+          'folder-$physicalIndex-'
+              '${widget.manager.state.settings.rootUri}',
+        ),
+        manager: widget.manager,
+        playbackController: widget.playbackController,
+      ),
     };
   }
 
@@ -155,8 +154,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
             ? _pageController.page ?? _physicalPage.toDouble()
             : _physicalPage.toDouble();
 
-        final pageOffset = (currentPage - physicalIndex)
-            .clamp(-1.0, 1.0);
+        final pageOffset = (currentPage - physicalIndex).clamp(-1.0, 1.0);
 
         final rotation = pageOffset * math.pi / 2;
 
@@ -183,25 +181,21 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
     );
   }
 
-  Offset _constrainCollapsedPosition(
-      Offset position,
-      Size availableSize,
-      ) {
+  Offset _constrainCollapsedPosition(Offset position, Size availableSize) {
     final mediaPadding = MediaQuery.paddingOf(context);
     const buttonSize = 48.0;
     const edgePadding = 8.0;
 
     final minimumX = edgePadding;
-    final maximumX =
-    math.max(minimumX, availableSize.width - buttonSize - edgePadding);
+    final maximumX = math.max(
+      minimumX,
+      availableSize.width - buttonSize - edgePadding,
+    );
 
     final minimumY = mediaPadding.top + edgePadding;
     final maximumY = math.max(
       minimumY,
-      availableSize.height -
-          mediaPadding.bottom -
-          buttonSize -
-          edgePadding,
+      availableSize.height - mediaPadding.bottom - buttonSize - edgePadding,
     );
 
     return Offset(
@@ -210,12 +204,14 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
     );
   }
 
-  void _moveCollapsedMiniPlayer(
-      DragUpdateDetails details,
-      Size availableSize,
-      ) {
-    final currentPosition = _collapsedMiniPlayerPosition ??
-        _defaultCollapsedPosition(availableSize);
+  void _moveCollapsedMiniPlayer(DragUpdateDetails details, Size availableSize) {
+    // Re-constrain the stored position before applying the drag delta.
+    // After an orientation change, the old coordinate may be outside the new
+    // viewport even though build() displays it at a constrained coordinate.
+    final currentPosition = _constrainCollapsedPosition(
+      _collapsedMiniPlayerPosition ?? _defaultCollapsedPosition(availableSize),
+      availableSize,
+    );
 
     setState(() {
       _collapsedMiniPlayerPosition = _constrainCollapsedPosition(
@@ -295,9 +291,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                             widget.playbackController.play();
                           }
                         },
-                        icon: Icon(
-                          isPlaying ? Icons.pause : Icons.play_arrow,
-                        ),
+                        icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                       );
                     },
                   ),
@@ -430,9 +424,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                 bottom: 8,
                 child: SafeArea(
                   top: false,
-                  child: Center(
-                    child: _buildPositionIndicator(),
-                  ),
+                  child: Center(child: _buildPositionIndicator()),
                 ),
               ),
             ],

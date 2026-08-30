@@ -260,20 +260,29 @@ The test scanner was temporarily used as the app home during testing.
 - five-second rewind/forward and selectable playback speeds
 - current-playlist screen with automatic scrolling to the active track
 - non-shuffle playlist track selection
+- shuffle mode hides the queue icon while preserving its layout space and does
+  not allow the randomized order to be opened as a queue
+- tapping the currently playing row in the normal queue closes the queue without
+  restarting or seeking the track
 - lazy current-track metadata and embedded-artwork extraction through Android
   `MediaMetadataRetriever` (implemented; broader format/device testing pending)
 - latest-built-library persistence using lightweight song paths and SAF URIs
   (implemented; restart/invalidation testing pending)
+- persistence and restoration of the last selected library, with stale saved
+  selections repaired to the first available library
+- Android notification/lock-screen seeking through `MediaAction.seek`, published
+  duration/current/buffered positions, and the audio handler's `seek()` method
 
 ## Next stages
 
-### Built-library persistence validation — next
+### Built-library persistence validation — completed
 
 The most recent successfully built library is now serialized separately from
 normal settings. Only its library name, root URI, recipe signature, and each
 song's relative path/SAF URI are stored; metadata and artwork are excluded.
 
-Still test:
+Device testing completed successfully on the target phone and Xiaomi tablet,
+including:
 - build, fully restart, and start shuffle without rescanning;
 - a valid empty built library;
 - switching away from and back to the cached library;
@@ -282,13 +291,14 @@ Still test:
 - rename and deletion of the cached library;
 - corrupt or version-mismatched cache fallback.
 
-### Metadata and playback validation
+### Metadata and playback validation — completed
 
 Current-track metadata is loaded lazily through Android
 `MediaMetadataRetriever`, including title, artist, album, and embedded artwork.
 The lightweight `Song` list does not retain metadata or artwork for every track.
 
-Still test and refine:
+Device testing completed successfully on the target phone and Xiaomi tablet,
+including:
 - metadata extraction for MP3, FLAC, and other formats actually used;
 - files with missing or malformed tags and missing artwork;
 - rapid Previous/Next changes while metadata extraction is still running;
@@ -298,20 +308,82 @@ Still test and refine:
 
 ### Remaining playback and queue work
 
-- Decide whether shuffled playback should expose its shuffled order as a queue;
-  the queue button is currently disabled during shuffle.
-- Decide whether selecting the currently playing queue row should restart it or
-  only close the queue; it currently closes the queue.
-- Consider caching only small current-track metadata if native extraction delay
-  is noticeable; do not cache artwork for the entire library.
-- Complete lyrics only if explicitly requested; it remains a placeholder.
+- **Completed:** Shuffled playback does not expose its randomized order as a
+  queue. The queue button uses `Visibility` with maintained size/state/animation,
+  and `_openQueue()` also rejects shuffle mode defensively.
+- **Completed:** Selecting the currently playing row in the normal queue only
+  closes the queue and preserves playback. Other rows still call `playAt()`.
+- **Completed, device validation pending:** Android notification and lock-screen
+  seeking are published through `MediaAction.seek`, `MediaItem.duration`, current
+  and buffered playback positions, and the handler's `seek()` implementation.
+  `androidStopForegroundOnPause: false` keeps the paused media notification
+  available; do not combine it with `androidNotificationOngoing: true`, because
+  `audio_service 0.18.19` asserts that this combination is invalid.
+- Do not persist track metadata in the built-library JSON. Metadata is secondary
+  to playback functionality and may be extracted lazily only after the selected
+  track begins playing, then populate the page when ready. Do not cache artwork
+  for the entire library.
+- Consider an optional "return to the last listened position" feature. It would
+  restore the shuffled list/order, current song, and paused position after leaving
+  the app screen, including for randomized libraries. This is approved as pending
+  work but is not an immediate implementation priority. The mini-player/floating
+  player may automatically load the saved queue, ordering, current song, and
+  position so the user can choose either to resume it or build a new playlist.
+  Persist state with low-write event-based checkpoints, especially on pause and
+  before disposal when that callback occurs; do not rely only on `dispose()`,
+  because removal from Android recent apps may terminate the process without a
+  guaranteed graceful callback. Also checkpoint on a suitable lifecycle event
+  such as app backgrounding and on queue/track changes rather than continuously.
+  Background checkpoints must be infrequent, rate-limited, and skipped when the
+  persisted queue, track, ordering, and meaningful playback position have not
+  changed. Coalesce related updates into one write and avoid timers that wake the
+  app merely to save progress. Drop the feature if meaningful battery or
+  computation cost cannot be avoided.
+- Lyrics support is implemented lazily for the current track. It supports ID3
+  `SYLT`/`USLT`, FLAC/Vorbis synchronized and unsynchronized lyric fields, and
+  same-basename sidecar `.lrc` files. Precedence is synchronized sidecar,
+  synchronized embedded, plain sidecar, then plain embedded. Timed lyrics follow
+  playback; missing lyrics show `No lyrics found`. The built library stores only
+  the optional sidecar URI, never lyric contents.
+- Library scans ignore `.lrc` files as playable songs and attach their URI to a
+  same-basename audio file instead. Old caches filter out `.lrc` entries when
+  loaded. The future folder browser must use the same rule and never add `.lrc`
+  files to its displayed audio list or playback queue.
 
-### Remaining carousel work
+### Library selection persistence — completed
 
-- Decide the purpose of the intentionally empty right-hand carousel page.
+- `AppSettings` stores `selectedLibraryName` in the settings JSON.
+- Selecting a library saves the new selection immediately.
+- On startup, `LibraryManager.load()` restores the saved selection when it still
+  exists. A missing or stale selection falls back to the first available library
+  and repairs the saved setting.
+- Root changes and library add/edit/rename/delete operations preserve or update
+  the selected name as appropriate.
+- The existing library selector UI reads `LibraryState.selectedLibraryName`, so
+  the restored library is selected when the app is reentered.
+
+### Carousel folder browser — implemented, validation pending
+
+- The formerly empty right-hand carousel page now contains a folder browser
+  rooted at the configured global root.
+- Folder navigation remains within the root, and tapping an audio file starts
+  normal (non-shuffle) playback from its containing folder.
+- Playback starts from the already listed direct-folder entries without waiting
+  for recursive traversal. When recursion is enabled, descendant tracks are
+  scanned asynchronously and the expanded queue is installed without restarting
+  or seeking the current track.
+- A user-facing switch controls recursive/non-recursive queue construction.
+  Recursion defaults to enabled and the choice persists between app launches.
+- Queue entries use path order. Non-recursive mode includes only audio files
+  directly inside the selected song's containing folder.
+- `.lrc` files are hidden from the browser and excluded as playable queue entries;
+  matching sidecar lyric URIs remain attached to their audio tracks.
+- Run `flutter analyze` and `flutter test` separately, then device-test recursive
+  queue completion, rapid successive song selections, root changes, and the
+  persisted switch on both target devices.
 - Test cube transitions and draggable mini-player placement on both target
   devices and after orientation changes.
-- Decide whether the collapsed state and draggable icon position should persist
+- Do not persist the mini-player collapsed state or draggable icon position
   between app launches.
 
 ### Cleanup and release
@@ -320,10 +392,14 @@ Still test and refine:
 - Delete unreferenced temporary scanner/settings test screens if still present.
 - Run `flutter analyze` and resolve warnings and unused imports.
 - Run the complete unit/widget test suite.
-- Perform regression testing for large/empty libraries, stale rebuild routing,
-  repeat modes, full shuffle cycles, notification controls, lock-screen
-  controls, backgrounding, reopening, and SAF permission persistence.
-- Test on the target phone and Xiaomi tablet.
+- Latest desktop validation attempt on 2026-08-30: the combined `flutter analyze`
+  and `flutter test` command produced no output and did not complete, so it was
+  stopped. Do not treat the current working tree as fully analyzer/test-verified;
+  rerun these commands separately before release.
+- Device testing on the target phone and Xiaomi tablet is complete and the app
+  works smoothly. Some automated regression tests may now fail because production
+  parameters changed without corresponding test updates; obtain the user's
+  detailed failure information, update the affected tests, and rerun the suite.
 - Configure release signing and produce the release APK.
 
 ## Architectural rules
@@ -407,8 +483,14 @@ When continuing:
 7. Keep UI simple and aligned with explicitly requested behavior.
 8. Run/analyze/test relevant Flutter code after changes.
 9. Work through the staged roadmap rather than jumping to speculative features.
+10. And make sure not to edit the code directly, always provide me the paste-ready
+    code and where to paste the codes (by providing the surrounding code).
 
-**Immediate task:** device-test the newly implemented built-library persistence,
-including restart restoration and every invalidation path. Then validate lazy
-metadata extraction across the user's actual audio formats while preserving the
-tested playback, shuffle/repeat, notification, and lock-screen behavior.
+**Immediate task:** validate the implemented right-hand carousel folder browser
+and asynchronous normal-play queue construction. Preserve the existing playback,
+shuffle/repeat, notification, lock-screen, lyrics, and restored-library-selection
+behavior. Resume-state persistence remains approved pending work but is not
+required before this validation. Device-test notification seeking, lyrics with
+representative tagged files and sidecars, recursive/non-recursive folder queues,
+and the persisted recursion switch, then rerun `flutter analyze` and
+`flutter test` separately.

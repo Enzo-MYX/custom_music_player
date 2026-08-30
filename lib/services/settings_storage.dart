@@ -9,6 +9,8 @@ import 'settings_repository.dart';
 class SettingsStorage implements SettingsRepository {
   static const String _settingsKey = 'app_settings';
   static const String _builtLibraryKey = 'built_library_cache';
+  static const String _folderBrowserRecursiveKey =
+      'folder_browser_recursive';
 
   final SharedPreferencesAsync _preferences;
 
@@ -82,5 +84,19 @@ class SettingsStorage implements SettingsRepository {
 
   Future<void> clearBuiltLibrary() async {
     await _preferences.remove(_builtLibraryKey);
+  }
+
+  Future<bool> loadFolderBrowserRecursive() async {
+    return await _preferences.getBool(
+      _folderBrowserRecursiveKey,
+    ) ??
+        true;
+  }
+
+  Future<void> saveFolderBrowserRecursive(bool enabled) async {
+    await _preferences.setBool(
+      _folderBrowserRecursiveKey,
+      enabled,
+    );
   }
 }

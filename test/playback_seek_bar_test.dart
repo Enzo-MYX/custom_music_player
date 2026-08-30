@@ -37,6 +37,7 @@ void main() {
           body: PlaybackSeekBar(
             durationStream: durationController.stream,
             positionStream: positionController.stream,
+            initialPosition: Duration.zero,
             onSeek: (position) async => seeks.add(position),
           ),
         ),
@@ -73,6 +74,7 @@ void main() {
           body: PlaybackSeekBar(
             durationStream: Stream<Duration?>.value(Duration.zero),
             positionStream: Stream<Duration>.value(Duration.zero),
+            initialPosition: Duration.zero,
             onSeek: (_) async {},
           ),
         ),

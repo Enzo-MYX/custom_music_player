@@ -59,6 +59,17 @@ class PlaybackController {
     return _handler.setSongs(songs);
   }
 
+  Future<void> startNormalQueue(
+      List<Song> songs,
+      int initialIndex,
+      ) {
+    return _handler.startNormalQueue(songs, initialIndex);
+  }
+
+  Future<bool> updateNormalQueue(List<Song> songs) {
+    return _handler.updateNormalQueue(songs);
+  }
+
   Future<void> startShuffle(List<Song> songs) {
     return _handler.startShuffle(songs);
   }

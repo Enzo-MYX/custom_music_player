@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../models/song.dart';
 import '../models/song_metadata.dart';
+import '../models/song_lyrics.dart';
 
 class MetadataReader {
   static const MethodChannel _channel = MethodChannel(
@@ -16,6 +17,7 @@ class MetadataReader {
         'readMetadata',
         {
           'uri': song.uri,
+          if (song.lyricsUri != null) 'lyricsUri': song.lyricsUri,
         },
       );
 
@@ -31,6 +33,10 @@ class MetadataReader {
         trackNumber: _clean(result['trackNumber']),
         year: _clean(result['year']),
         artwork: result['artwork'] as Uint8List?,
+        lyrics: chooseLyrics(
+          sidecar: _clean(result['sidecarLyrics']),
+          embedded: _clean(result['embeddedLyrics']),
+        ),
       );
     } on PlatformException {
       return const SongMetadata();
