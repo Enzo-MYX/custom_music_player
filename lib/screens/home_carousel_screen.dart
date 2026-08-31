@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -69,6 +70,8 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   Future<void> _load() async {
     try {
       await widget.manager.load();
+      final miniPlayerCollapsed =
+          await widget.manager.loadMiniPlayerCollapsed();
 
       if (!mounted) {
         return;
@@ -77,6 +80,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
       setState(() {
         _loading = false;
         _error = null;
+        _miniPlayerCollapsed = miniPlayerCollapsed;
       });
     } catch (error) {
       if (!mounted) {
@@ -221,6 +225,14 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
     });
   }
 
+  void _setMiniPlayerCollapsed(bool collapsed) {
+    setState(() {
+      _miniPlayerCollapsed = collapsed;
+    });
+
+    unawaited(widget.manager.saveMiniPlayerCollapsed(collapsed));
+  }
+
   Widget _buildMiniPlayer(Size availableSize) {
     return StreamBuilder(
       stream: widget.playbackController.currentSongStream,
@@ -241,11 +253,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
             child: FloatingActionButton.small(
               heroTag: 'collapsed-mini-player',
               tooltip: 'Expand mini-player',
-              onPressed: () {
-                setState(() {
-                  _miniPlayerCollapsed = false;
-                });
-              },
+              onPressed: () => _setMiniPlayerCollapsed(false),
               child: const Icon(Icons.music_note),
             ),
           );
@@ -297,11 +305,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                   ),
                   IconButton(
                     tooltip: 'Collapse player',
-                    onPressed: () {
-                      setState(() {
-                        _miniPlayerCollapsed = true;
-                      });
-                    },
+                    onPressed: () => _setMiniPlayerCollapsed(true),
                     icon: const Icon(Icons.keyboard_arrow_down),
                   ),
                   const SizedBox(width: 4),
@@ -411,7 +415,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                 Positioned(
                   left: 16,
                   right: 16,
-                  bottom: 44,
+                  bottom: 200,
                   child: SafeArea(
                     top: false,
                     child: _buildMiniPlayer(availableSize),

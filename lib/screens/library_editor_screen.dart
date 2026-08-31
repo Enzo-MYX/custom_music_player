@@ -5,6 +5,7 @@ import '../models/build_mode.dart';
 import '../models/library_command.dart';
 import '../models/music_library.dart';
 import '../services/library_manager.dart';
+import '../services/path_utils.dart';
 import 'path_selector_screen.dart';
 
 class LibraryEditorScreen extends StatefulWidget {
@@ -157,11 +158,21 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       ) async {
     final commandsToAdd = <LibraryCommand>[];
     final conflictingPaths = <String>[];
+    var selectedRoot = false;
 
-    for (final path in selectedPaths) {
+    for (final selectedPath in selectedPaths) {
+      final normalizedPath = PathUtils.normalize(selectedPath);
+
+      // A root rule is represented by the library's build mode, never by a
+      // command. It therefore applies globally and needs no confirmation.
+      if (normalizedPath.isEmpty) {
+        selectedRoot = true;
+        continue;
+      }
+
       final command = LibraryCommand.create(
         include: requestedInclude,
-        path: path,
+        path: normalizedPath,
       );
 
       final alreadyExists = _commands.any(
@@ -175,8 +186,14 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       }
     }
 
-    if (commandsToAdd.isNotEmpty) {
+    if (commandsToAdd.isNotEmpty || selectedRoot) {
       setState(() {
+        if (selectedRoot) {
+          _buildMode = requestedInclude
+              ? LibraryBuildMode.includeAll
+              : LibraryBuildMode.includeNone;
+        }
+
         _commands.addAll(commandsToAdd);
       });
     }

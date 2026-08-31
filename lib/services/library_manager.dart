@@ -4,6 +4,8 @@ import 'package:saf/saf.dart';
 
 import '../models/app_settings.dart';
 import '../models/built_library_cache.dart';
+import '../models/build_mode.dart';
+import '../models/library_command.dart';
 import '../models/library_state.dart';
 import '../models/music_library.dart';
 import '../models/song.dart';
@@ -11,6 +13,8 @@ import 'library_scanner.dart';
 import 'settings_storage.dart';
 
 class LibraryManager {
+  static const String _temporaryFolderLibraryName =
+      '__temporary_folder_library__';
   final SettingsStorage _storage;
   final LibraryScanner _scanner;
   final Saf _saf;
@@ -30,6 +34,14 @@ class LibraryManager {
 
   Future<void> saveFolderBrowserRecursive(bool enabled) {
     return _storage.saveFolderBrowserRecursive(enabled);
+  }
+
+  Future<bool> loadMiniPlayerCollapsed() {
+    return _storage.loadMiniPlayerCollapsed();
+  }
+
+  Future<void> saveMiniPlayerCollapsed(bool collapsed) {
+    return _storage.saveMiniPlayerCollapsed(collapsed);
   }
 
   Future<void> load() async {
@@ -128,7 +140,11 @@ class LibraryManager {
         'Library "$name" does not exist.',
       );
     }
-    if (_state.selectedLibraryName == name) {
+
+    final temporaryLibraryActive =
+        _state.builtLibraryName == _temporaryFolderLibraryName;
+
+    if (_state.selectedLibraryName == name && !temporaryLibraryActive) {
       return;
     }
 
@@ -143,8 +159,9 @@ class LibraryManager {
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: name,
-      builtLibraryName: _state.builtLibraryName,
-      songs: _state.songs,
+      builtLibraryName:
+      temporaryLibraryActive ? null : _state.builtLibraryName,
+      songs: temporaryLibraryActive ? const [] : _state.songs,
       scanning: false,
     );
   }
@@ -339,6 +356,72 @@ class LibraryManager {
           : _state.songs,
       scanning: false,
     );
+  }
+
+  Future<List<Song>> buildTemporaryFolderLibrary(
+      String relativeFolderPath,
+      ) async {
+    final normalizedPath = relativeFolderPath
+        .replaceAll('\\', '/')
+        .split('/')
+        .where((component) => component.isNotEmpty)
+        .join('/');
+
+    final root = await getRoot();
+    if (root == null) {
+      throw StateError('No valid root directory is selected.');
+    }
+
+    final temporaryLibrary = normalizedPath.isEmpty
+        ? MusicLibrary(
+      name: _temporaryFolderLibraryName,
+      buildMode: LibraryBuildMode.includeAll,
+      commands: const [],
+    )
+        : MusicLibrary(
+      name: _temporaryFolderLibraryName,
+      buildMode: LibraryBuildMode.includeNone,
+      commands: [
+        LibraryCommand.create(
+          include: true,
+          path: normalizedPath,
+        ),
+      ],
+    );
+
+    // A temporary folder build replaces any previously persisted built library.
+    await _storage.clearBuiltLibrary();
+
+    _state = LibraryState(
+      settings: _state.settings,
+      selectedLibraryName: _state.selectedLibraryName,
+      builtLibraryName: null,
+      songs: const [],
+      scanning: true,
+    );
+
+    try {
+      final songs = await _scanner.rebuild(root, temporaryLibrary);
+
+      _state = LibraryState(
+        settings: _state.settings,
+        selectedLibraryName: _state.selectedLibraryName,
+        builtLibraryName: _temporaryFolderLibraryName,
+        songs: songs,
+        scanning: false,
+      );
+
+      return songs;
+    } catch (_) {
+      _state = LibraryState(
+        settings: _state.settings,
+        selectedLibraryName: _state.selectedLibraryName,
+        builtLibraryName: null,
+        songs: const [],
+        scanning: false,
+      );
+      rethrow;
+    }
   }
 
   Future<List<Song>> rebuildSelectedLibrary() async {

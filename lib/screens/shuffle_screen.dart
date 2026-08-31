@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/library_manager.dart';
 import '../services/playback_controller.dart';
+import 'folder_browser_screen.dart';
 import 'library_manager_screen.dart';
 import 'playback_screen.dart';
 
@@ -112,6 +113,79 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
     setState(() {
       _selectedThroughDropdown = false;
     });
+  }
+
+  Future<void> _startFolderShuffle() async {
+    if (_starting) {
+      return;
+    }
+
+    final relativeFolderPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => FolderBrowserScreen(
+          manager: widget.manager,
+          playbackController: widget.playbackController,
+          selectFolder: true,
+        ),
+      ),
+    );
+
+    if (!mounted || relativeFolderPath == null) {
+      return;
+    }
+
+    try {
+      setState(() {
+        _starting = true;
+        _error = null;
+      });
+
+      final songs = await widget.manager.buildTemporaryFolderLibrary(
+        relativeFolderPath,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (songs.isEmpty) {
+        setState(() {
+          _starting = false;
+          _error = 'The selected folder contains no songs.';
+        });
+        return;
+      }
+
+      await widget.playbackController.startShuffle(songs);
+
+      if (!mounted) {
+        return;
+      }
+
+      unawaited(widget.playbackController.play());
+
+      setState(() {
+        _starting = false;
+        _selectedThroughDropdown = false;
+      });
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PlaybackScreen(
+            controller: widget.playbackController,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _starting = false;
+        _error = error.toString();
+      });
+    }
   }
 
   Future<void> _startShuffle() async {
@@ -286,6 +360,17 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
                           ],
                         ),
                       ),
+                    ),
+                  ),
+                ),
+                Align(
+                  alignment: const Alignment(0, 0.74),
+                  child: SizedBox(
+                    width: 320,
+                    child: OutlinedButton.icon(
+                      onPressed: _starting ? null : _startFolderShuffle,
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      label: const Text('Shuffle from folder'),
                     ),
                   ),
                 ),

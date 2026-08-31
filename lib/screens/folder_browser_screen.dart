@@ -13,10 +13,16 @@ class FolderBrowserScreen extends StatefulWidget {
     super.key,
     required this.manager,
     required this.playbackController,
+    this.selectFolder = false,
   });
 
   final LibraryManager manager;
   final PlaybackController playbackController;
+
+  /// When true, this screen returns a root-relative folder path instead of
+  /// playing files. The configured root itself cannot be selected because a
+  /// library command cannot target the root directory.
+  final bool selectFolder;
 
   @override
   State<FolderBrowserScreen> createState() => _FolderBrowserScreenState();
@@ -474,7 +480,9 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Folders'),
+          title: Text(
+            widget.selectFolder ? 'Select folder' : 'Folders',
+          ),
           actions: [
             IconButton(
               tooltip: 'Refresh root',
@@ -485,22 +493,40 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
         ),
         body: Column(
           children: [
-            SwitchListTile(
-              title: const Text('Include descendant folders'),
-              subtitle: const Text(
-                'Add audio files from subfolders to the playback queue',
+            if (!widget.selectFolder) ...[
+              SwitchListTile(
+                title: const Text('Include descendant folders'),
+                subtitle: const Text(
+                  'Add audio files from subfolders to the playback queue',
+                ),
+                value: _recursive,
+                onChanged: _loading ? null : _setRecursive,
               ),
-              value: _recursive,
-              onChanged: _loading ? null : _setRecursive,
-            ),
-            const Divider(height: 1),
+              const Divider(height: 1),
+            ],
             _buildPathBar(),
             const Divider(height: 1),
-            if (_buildingQueue)
+            if (_buildingQueue && !widget.selectFolder)
               const LinearProgressIndicator(minHeight: 2),
             Expanded(child: _buildContent()),
           ],
         ),
+        bottomNavigationBar: widget.selectFolder
+            ? SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: FilledButton.icon(
+            onPressed: _loading
+                ? null
+                : () => Navigator.of(context).pop(_currentPath),
+            icon: const Icon(Icons.folder_open),
+            label: Text(
+              _currentPath.isEmpty
+                  ? 'Shuffle the root folder'
+                  : 'Shuffle this folder',
+            ),
+          ),
+        )
+            : null,
       ),
     );
   }
@@ -584,9 +610,14 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
           ),
           trailing: entry.isDir
               ? const Icon(Icons.chevron_right)
+              : widget.selectFolder
+              ? null
               : const Icon(Icons.play_arrow),
+          enabled: entry.isDir || !widget.selectFolder,
           onTap: entry.isDir
               ? () => _openDirectory(entry)
+              : widget.selectFolder
+              ? null
               : () => _playFile(entry),
         );
       },

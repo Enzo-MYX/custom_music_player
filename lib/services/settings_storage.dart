@@ -11,6 +11,7 @@ class SettingsStorage implements SettingsRepository {
   static const String _settingsKey = 'app_settings';
   static const String _builtLibraryKey = 'built_library_cache';
   static const String _folderBrowserRecursiveKey = 'folder_browser_recursive';
+  static const String _miniPlayerCollapsedKey = 'mini_player_collapsed';
   static const String _playbackResumeStateKey = 'playback_resume_state';
 
   final SharedPreferencesAsync _preferences;
@@ -79,6 +80,14 @@ class SettingsStorage implements SettingsRepository {
 
   Future<void> saveFolderBrowserRecursive(bool enabled) async {
     await _preferences.setBool(_folderBrowserRecursiveKey, enabled);
+  }
+
+  Future<bool> loadMiniPlayerCollapsed() async {
+    return await _preferences.getBool(_miniPlayerCollapsedKey) ?? false;
+  }
+
+  Future<void> saveMiniPlayerCollapsed(bool collapsed) async {
+    await _preferences.setBool(_miniPlayerCollapsedKey, collapsed);
   }
 
   Future<PlaybackResumeState?> loadPlaybackResumeState() async {

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:saf/saf.dart';
 
 import 'library_editor_screen.dart';
-import 'playback_screen.dart';
 import '../models/build_mode.dart';
 import '../models/library_command.dart';
 import '../models/library_state.dart';
@@ -106,7 +105,7 @@ class _LibraryManagerScreenState
       await _manager.addLibrary(
         MusicLibrary(
           name: result,
-          buildMode: LibraryBuildMode.includeAll,
+          buildMode: LibraryBuildMode.includeNone,
           commands: const [],
         ),
       );
@@ -281,16 +280,6 @@ class _LibraryManagerScreenState
 
       _showError(e.toString());
     }
-  }
-
-  Future<void> _openPlayer() {
-    return Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PlaybackScreen(
-          controller: widget.playbackController,
-        ),
-      ),
-    );
   }
 
   Future<String?> _showLibraryNameDialog({
@@ -555,14 +544,6 @@ class _LibraryManagerScreenState
                     : 'Rebuild Library',
               ),
             ),
-            if (_state.songs.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: _openPlayer,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Open Player'),
-              ),
-            ],
           ],
         ),
       ),

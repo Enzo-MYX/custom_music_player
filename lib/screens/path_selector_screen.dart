@@ -159,14 +159,7 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
   }
 
   void _selectCurrentFolder() {
-    // Root selection is deliberately invalid for a single command.
-    if (_currentPath.isEmpty) {
-      return;
-    }
-
-    Navigator.of(context).pop(
-      _currentPath,
-    );
+    Navigator.of(context).pop(_currentPath);
   }
 
   void _enterBulkSelection() {
@@ -387,7 +380,7 @@ class _PathSelectorScreenState extends State<PathSelectorScreen> {
               child: FilledButton.icon(
                 onPressed: _bulkSelecting
                     ? (_selectedPaths.isEmpty ? null : _selectEntries)
-                    : (_currentPath.isEmpty ? null : _selectCurrentFolder),
+                    : _selectCurrentFolder,
                 icon: Icon(
                   _bulkSelecting ? Icons.add : Icons.check,
                 ),
