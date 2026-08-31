@@ -13,12 +13,9 @@ import 'services/player_audio_handler.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final notificationStatus =
-  await Permission.notification.request();
+  final notificationStatus = await Permission.notification.request();
 
-  debugPrint(
-    '[audio] notification permission: $notificationStatus',
-  );
+  debugPrint('[audio] notification permission: $notificationStatus');
 
   final playerAudioHandler = PlayerAudioHandler();
 
@@ -27,8 +24,7 @@ Future<void> main() async {
   final registeredAudioHandler = await AudioService.init(
     builder: () => playerAudioHandler,
     config: const AudioServiceConfig(
-      androidNotificationChannelId:
-      'com.example.custom_music_player.playback',
+      androidNotificationChannelId: 'com.example.custom_music_player.playback',
       androidNotificationChannelName: 'Music playback',
 
       androidStopForegroundOnPause: false,
@@ -39,33 +35,27 @@ Future<void> main() async {
 
   debugPrint(
     '[audio] AudioService initialized; '
-        'sameHandler='
-        '${identical(registeredAudioHandler, playerAudioHandler)}',
+    'sameHandler='
+    '${identical(registeredAudioHandler, playerAudioHandler)}',
   );
 
-  runApp(
-    MusicPlayerApp(
-      playbackController: PlaybackController(
-        playerAudioHandler,
-      ),
-    ),
-  );
+  final playbackController = PlaybackController(playerAudioHandler);
+  await playbackController.initialize();
+
+  runApp(MusicPlayerApp(playbackController: playbackController));
 }
 
 class MusicPlayerApp extends StatefulWidget {
   final PlaybackController playbackController;
 
-  const MusicPlayerApp({
-    super.key,
-    required this.playbackController,
-  });
+  const MusicPlayerApp({super.key, required this.playbackController});
 
   @override
-  State<MusicPlayerApp> createState() =>
-      _MusicPlayerAppState();
+  State<MusicPlayerApp> createState() => _MusicPlayerAppState();
 }
 
-class _MusicPlayerAppState extends State<MusicPlayerApp> {
+class _MusicPlayerAppState extends State<MusicPlayerApp>
+    with WidgetsBindingObserver {
   late final LibraryManager _manager;
 
   @override
@@ -73,10 +63,22 @@ class _MusicPlayerAppState extends State<MusicPlayerApp> {
     super.initState();
 
     _manager = LibraryManager();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(widget.playbackController.checkpoint());
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(widget.playbackController.dispose());
     super.dispose();
   }
@@ -86,9 +88,7 @@ class _MusicPlayerAppState extends State<MusicPlayerApp> {
     return MaterialApp(
       title: 'Custom Music Player',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
       home: HomeCarouselScreen(

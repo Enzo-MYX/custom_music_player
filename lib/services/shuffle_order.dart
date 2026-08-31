@@ -54,6 +54,19 @@ class ShuffleOrder {
     _position = _indices.isEmpty ? -1 : 0;
   }
 
+  void restore(List<int> indices, int position) {
+    if (indices.isEmpty ||
+        position < 0 ||
+        position >= indices.length ||
+        indices.toSet().length != indices.length ||
+        indices.any((index) => index < 0 || index >= indices.length)) {
+      throw const FormatException('Invalid shuffle order');
+    }
+
+    _indices = List<int>.of(indices);
+    _position = position;
+  }
+
   int? movePrevious() {
     if (!canGoPrevious) {
       return null;

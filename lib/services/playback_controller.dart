@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:audio_service/audio_service.dart';
@@ -5,11 +6,51 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../models/song_metadata.dart';
 import 'player_audio_handler.dart';
+import 'settings_storage.dart';
 
 class PlaybackController {
   final PlayerAudioHandler _handler;
+  final SettingsStorage _storage;
+  String? _lastSavedState;
+  Future<void> _saveChain = Future<void>.value();
+  late final StreamSubscription<void> _checkpointSubscription;
 
-  PlaybackController(this._handler);
+  PlaybackController(this._handler, {SettingsStorage? storage})
+    : _storage = storage ?? SettingsStorage() {
+    _checkpointSubscription = _handler.resumeCheckpointStream.listen(
+      (_) => unawaited(checkpoint().catchError((Object _) {})),
+    );
+  }
+
+  Future<void> initialize() async {
+    final state = await _storage.loadPlaybackResumeState();
+    if (state == null) return;
+    if (!await _handler.restore(state)) {
+      await _storage.clearPlaybackResumeState();
+    } else {
+      _lastSavedState = state.toJson().toString();
+    }
+  }
+
+  Future<void> checkpoint() {
+    final state = _handler.resumeState;
+    Future<void> save() async {
+      if (state == null) {
+        if (_lastSavedState != null) {
+          await _storage.clearPlaybackResumeState();
+          _lastSavedState = null;
+        }
+        return;
+      }
+      final serialized = state.toJson().toString();
+      if (serialized == _lastSavedState) return;
+      await _storage.savePlaybackResumeState(state);
+      _lastSavedState = serialized;
+    }
+
+    _saveChain = _saveChain.then((_) => save(), onError: (_) => save());
+    return _saveChain;
+  }
 
   Stream<bool> get playingStream =>
       _handler.playbackState.map((state) => state.playing).distinct();
@@ -56,22 +97,22 @@ class PlaybackController {
       _handler.playbackState.map((state) => state.repeatMode).distinct();
 
   Future<void> setSongs(List<Song> songs) {
-    return _handler.setSongs(songs);
+    return _thenCheckpoint(_handler.setSongs(songs));
   }
 
-  Future<void> startNormalQueue(
-      List<Song> songs,
-      int initialIndex,
-      ) {
-    return _handler.startNormalQueue(songs, initialIndex);
+  Future<void> startNormalQueue(List<Song> songs, int initialIndex) {
+    return _thenCheckpoint(_handler.startNormalQueue(songs, initialIndex));
   }
 
   Future<bool> updateNormalQueue(List<Song> songs) {
-    return _handler.updateNormalQueue(songs);
+    return _handler.updateNormalQueue(songs).then((updated) async {
+      if (updated) await checkpoint();
+      return updated;
+    });
   }
 
   Future<void> startShuffle(List<Song> songs) {
-    return _handler.startShuffle(songs);
+    return _thenCheckpoint(_handler.startShuffle(songs));
   }
 
   Future<void> play() {
@@ -79,15 +120,15 @@ class PlaybackController {
   }
 
   Future<void> playAt(int index) {
-    return _handler.playAt(index);
+    return _thenCheckpoint(_handler.playAt(index));
   }
 
   Future<void> pause() {
-    return _handler.pause();
+    return _thenCheckpoint(_handler.pause());
   }
 
   Future<void> seek(Duration position) {
-    return _handler.seek(position);
+    return _thenCheckpoint(_handler.seek(position));
   }
 
   Future<void> seekBy(Duration offset) {
@@ -114,15 +155,15 @@ class PlaybackController {
   }
 
   Future<void> setSpeed(double speed) {
-    return _handler.setSpeed(speed);
+    return _thenCheckpoint(_handler.setSpeed(speed));
   }
 
   Future<void> previous() {
-    return _handler.skipToPrevious();
+    return _thenCheckpoint(_handler.skipToPrevious());
   }
 
   Future<void> next() {
-    return _handler.skipToNext();
+    return _thenCheckpoint(_handler.skipToNext());
   }
 
   Future<void> cycleRepeatMode() {
@@ -132,10 +173,18 @@ class PlaybackController {
       _ => AudioServiceRepeatMode.none,
     };
 
-    return _handler.setRepeatMode(nextMode);
+    return _thenCheckpoint(_handler.setRepeatMode(nextMode));
   }
 
   Future<void> dispose() {
-    return _handler.dispose();
+    return checkpoint().whenComplete(() async {
+      await _checkpointSubscription.cancel();
+      await _handler.dispose();
+    });
+  }
+
+  Future<void> _thenCheckpoint(Future<void> operation) async {
+    await operation;
+    await checkpoint();
   }
 }

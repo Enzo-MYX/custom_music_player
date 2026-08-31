@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart' as just_audio;
 
 import '../models/song.dart';
 import '../models/song_metadata.dart';
+import '../models/playback_resume_state.dart';
 import 'metadata_reader.dart';
 import 'path_utils.dart';
 import 'shuffle_order.dart';
@@ -18,6 +19,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   final StreamController<SongMetadata?> _metadataController =
       StreamController<SongMetadata?>.broadcast();
+  final StreamController<void> _resumeCheckpointController =
+      StreamController<void>.broadcast();
 
   SongMetadata? _currentMetadata;
 
@@ -52,6 +55,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Stream<SongMetadata?> get currentMetadataStream => _metadataController.stream;
 
+  Stream<void> get resumeCheckpointStream => _resumeCheckpointController.stream;
+
   int? get queuePosition {
     if (_currentIndex == null) {
       return null;
@@ -79,6 +84,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioServiceRepeatMode get repeatMode => _repeatMode;
+
+  PlaybackResumeState? get resumeState {
+    final index = _currentIndex;
+    if (index == null || _songs.isEmpty) return null;
+    return PlaybackResumeState(
+      songs: List<Song>.of(_songs),
+      currentIndex: index,
+      shuffleEnabled: _shuffleEnabled,
+      shuffleOrder: _shuffleOrder.indices,
+      shufflePosition: _shuffleOrder.position,
+      positionMilliseconds: _player.position.inMilliseconds,
+      speed: _player.speed,
+      repeatMode: _repeatMode,
+    );
+  }
 
   bool get canGoPrevious {
     if (_shuffleEnabled) {
@@ -141,6 +161,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
       if (_repeatMode == AudioServiceRepeatMode.one) {
         await _player.seek(Duration.zero);
+        _requestResumeCheckpoint();
         unawaited(_player.play());
         return;
       }
@@ -162,12 +183,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         }
 
         await _loadCurrentSong();
+        _requestResumeCheckpoint();
         unawaited(_player.play());
         return;
       }
 
       await _player.pause();
       await _player.seek(Duration.zero);
+      _requestResumeCheckpoint();
     });
   }
 
@@ -175,10 +198,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return _loadSongs(songs, shuffle: false);
   }
 
-  Future<void> startNormalQueue(
-      List<Song> songs,
-      int initialIndex,
-      ) async {
+  Future<void> startNormalQueue(List<Song> songs, int initialIndex) async {
     if (initialIndex < 0 || initialIndex >= songs.length) {
       throw RangeError.index(initialIndex, songs, 'initialIndex');
     }
@@ -193,6 +213,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
     await _loadCurrentSong();
     unawaited(_player.play());
+    _requestResumeCheckpoint();
   }
 
   Future<bool> updateNormalQueue(List<Song> songs) async {
@@ -205,9 +226,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       return false;
     }
 
-    final newIndex = songs.indexWhere(
-          (song) => song.uri == current.uri,
-    );
+    final newIndex = songs.indexWhere((song) => song.uri == current.uri);
 
     if (newIndex < 0) {
       return false;
@@ -218,15 +237,45 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _songs = songs;
     _currentIndex = newIndex;
 
-    playbackState.add(
-      _toPlaybackState(_player.playbackEvent),
-    );
+    playbackState.add(_toPlaybackState(_player.playbackEvent));
+
+    _requestResumeCheckpoint();
 
     return true;
   }
 
   Future<void> startShuffle(List<Song> songs) {
     return _loadSongs(songs, shuffle: true);
+  }
+
+  Future<bool> restore(PlaybackResumeState state) async {
+    if (!state.isValid) return false;
+
+    try {
+      await _player.stop();
+      _songs = List<Song>.of(state.songs);
+      _shuffleEnabled = state.shuffleEnabled;
+      _currentIndex = state.currentIndex;
+      _repeatMode = state.repeatMode;
+      if (_shuffleEnabled) {
+        _shuffleOrder.restore(state.shuffleOrder, state.shufflePosition);
+      } else {
+        _shuffleOrder.reset(0);
+      }
+      await _player.setSpeed(state.speed);
+      await _loadCurrentSong();
+      await seek(state.position);
+      playbackState.add(_toPlaybackState(_player.playbackEvent));
+      _requestResumeCheckpoint();
+      return true;
+    } catch (_) {
+      await _player.stop();
+      _songs = const [];
+      _currentIndex = null;
+      _shuffleEnabled = false;
+      _shuffleOrder.reset(0);
+      return false;
+    }
   }
 
   Future<void> _loadSongs(List<Song> songs, {required bool shuffle}) async {
@@ -253,6 +302,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_currentIndex != null) {
       await _loadCurrentSong();
     }
+    _requestResumeCheckpoint();
   }
 
   @override
@@ -260,6 +310,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _repeatMode = repeatMode;
 
     playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+    _requestResumeCheckpoint();
   }
 
   @override
@@ -289,17 +340,19 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (wasPlaying) {
       unawaited(_player.play());
     }
+    _requestResumeCheckpoint();
   }
 
   @override
-  Future<void> pause() {
-    return _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+    _requestResumeCheckpoint();
   }
 
   // Called when either the playback-screen slider or the system
   // notification/lock-screen slider is moved.
   @override
-  Future<void> seek(Duration position) {
+  Future<void> seek(Duration position) async {
     final duration = _player.duration;
     var target = position;
 
@@ -311,7 +364,34 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       target = duration;
     }
 
-    return _player.seek(target);
+    await _player.seek(target);
+    _requestResumeCheckpoint();
+  }
+
+  /// Moves five seconds backwards without ever changing the current track.
+  @override
+  Future<void> rewind() async {
+    final target = _player.position - const Duration(seconds: 5);
+    await seek(target.isNegative ? Duration.zero : target);
+  }
+
+  /// Moves five seconds forwards, continuing at the start of the next track
+  /// when the current track is exhausted.
+  @override
+  Future<void> fastForward() async {
+    final duration = _player.duration;
+    final target = _player.position + const Duration(seconds: 5);
+
+    if (duration != null && target >= duration) {
+      if (canGoNext) {
+        await skipToNext();
+      } else {
+        await seek(duration);
+      }
+      return;
+    }
+
+    await seek(target);
   }
 
   @override
@@ -319,6 +399,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     await _player.setSpeed(speed);
 
     playbackState.add(_toPlaybackState(_player.playbackEvent));
+    _requestResumeCheckpoint();
   }
 
   @override
@@ -340,6 +421,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (wasPlaying) {
       unawaited(_player.play());
     }
+    _requestResumeCheckpoint();
   }
 
   @override
@@ -361,6 +443,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (wasPlaying) {
       unawaited(_player.play());
     }
+    _requestResumeCheckpoint();
   }
 
   @override
@@ -371,6 +454,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> dispose() async {
     await _player.dispose();
     await _metadataController.close();
+    await _resumeCheckpointController.close();
+  }
+
+  void _requestResumeCheckpoint() {
+    if (!_resumeCheckpointController.isClosed) {
+      _resumeCheckpointController.add(null);
+    }
   }
 
   Future<void> _loadCurrentSong() async {
@@ -473,11 +563,30 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       action: MediaAction.playPause,
     );
 
+    // Keep a stable five-slot layout. A transparent icon retains the outer
+    // previous/next slot when that action is unavailable, leaving play/pause
+    // geometrically centred in both the expanded and compact notification.
+    final previousControl = MediaControl(
+      androidIcon: canGoPrevious
+          ? 'drawable/audio_service_skip_previous'
+          : 'drawable/audio_service_empty',
+      label: 'Previous',
+      action: MediaAction.skipToPrevious,
+    );
+    final nextControl = MediaControl(
+      androidIcon: canGoNext
+          ? 'drawable/audio_service_skip_next'
+          : 'drawable/audio_service_empty',
+      label: 'Next',
+      action: MediaAction.skipToNext,
+    );
+
     final controls = <MediaControl>[
-      if (canGoPrevious) MediaControl.skipToPrevious,
+      previousControl,
+      MediaControl.rewind,
       playPauseControl,
-      if (canGoNext) MediaControl.skipToNext,
-      MediaControl.stop,
+      MediaControl.fastForward,
+      nextControl,
     ];
 
     return PlaybackState(
@@ -486,10 +595,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       // Enables dragging the Android notification and lock-screen progress bar.
       systemActions: const {MediaAction.seek},
 
-      androidCompactActionIndices: List.generate(
-        controls.length > 3 ? 3 : controls.length,
-        (index) => index,
-      ),
+      // Android permits three compact actions. Rewind/play/forward keeps the
+      // primary action centred; expanding reveals previous and next as well.
+      androidCompactActionIndices: const [1, 2, 3],
       processingState: switch (_player.processingState) {
         just_audio.ProcessingState.idle => AudioProcessingState.idle,
         just_audio.ProcessingState.loading => AudioProcessingState.loading,

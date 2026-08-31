@@ -272,6 +272,8 @@ The test scanner was temporarily used as the app home during testing.
   selections repaired to the first available library
 - Android notification/lock-screen seeking through `MediaAction.seek`, published
   duration/current/buffered positions, and the audio handler's `seek()` method
+- resume-state persistence and paused startup restoration for the playback queue,
+  exact shuffle order, current track and position, speed, and repeat mode
 
 ## Next stages
 
@@ -323,22 +325,30 @@ including:
   to playback functionality and may be extracted lazily only after the selected
   track begins playing, then populate the page when ready. Do not cache artwork
   for the entire library.
-- Consider an optional "return to the last listened position" feature. It would
-  restore the shuffled list/order, current song, and paused position after leaving
-  the app screen, including for randomized libraries. This is approved as pending
-  work but is not an immediate implementation priority. The mini-player/floating
-  player may automatically load the saved queue, ordering, current song, and
-  position so the user can choose either to resume it or build a new playlist.
-  Persist state with low-write event-based checkpoints, especially on pause and
-  before disposal when that callback occurs; do not rely only on `dispose()`,
-  because removal from Android recent apps may terminate the process without a
-  guaranteed graceful callback. Also checkpoint on a suitable lifecycle event
-  such as app backgrounding and on queue/track changes rather than continuously.
-  Background checkpoints must be infrequent, rate-limited, and skipped when the
-  persisted queue, track, ordering, and meaningful playback position have not
-  changed. Coalesce related updates into one write and avoid timers that wake the
-  app merely to save progress. Drop the feature if meaningful battery or
-  computation cost cannot be avoided.
+- **Completed, device validation pending:** Resume-state persistence restores the
+  saved queue, exact randomized order and shuffle position, current song, paused
+  playback position, playback speed, and repeat mode before the UI starts. The
+  restored player remains paused so playback never starts unexpectedly.
+- **Completed by design:** No explicit "Resume previous session?" confirmation is
+  required. Automatically loading the saved session in a paused state is the
+  intended final behavior. The user resumes it by pressing Play or replaces it by
+  starting a new normal or shuffled playlist.
+- Resume snapshots use a separate versioned `playback_resume_state` preference.
+  They contain lightweight `Song` values only; metadata, artwork, and lyric
+  contents are not persisted. Invalid, corrupt, or incompatible snapshots are
+  ignored, and a snapshot that fails to load its audio source is cleared.
+- Checkpoints are event-based rather than periodic. They occur on queue creation
+  or replacement, track changes (including audio-service and automatic changes),
+  pause, explicit seek, speed/repeat changes, app backgrounding, and disposal.
+  Writes are serialized, unchanged snapshots are skipped, and there is no timer
+  or live-position-stream persistence. This preserves the intended low-write,
+  low-battery behavior while covering Android process termination paths where
+  `dispose()` is not guaranteed.
+- Automated coverage in `playback_resume_state_test.dart` validates shuffled
+  state JSON round-tripping and malformed shuffle-order rejection. The complete
+  Flutter suite passes with 58 tests. `flutter analyze --no-pub` reports only the
+  five pre-existing import diagnostics elsewhere in the project and no new
+  resume-state issue.
 - Lyrics support is implemented lazily for the current track. It supports ID3
   `SYLT`/`USLT`, FLAC/Vorbis synchronized and unsynchronized lyric fields, and
   same-basename sidecar `.lrc` files. Precedence is synchronized sidecar,
@@ -489,8 +499,8 @@ When continuing:
 **Immediate task:** validate the implemented right-hand carousel folder browser
 and asynchronous normal-play queue construction. Preserve the existing playback,
 shuffle/repeat, notification, lock-screen, lyrics, and restored-library-selection
-behavior. Resume-state persistence remains approved pending work but is not
-required before this validation. Device-test notification seeking, lyrics with
-representative tagged files and sidecars, recursive/non-recursive folder queues,
-and the persisted recursion switch, then rerun `flutter analyze` and
-`flutter test` separately.
+behavior. Resume-state persistence is implemented with automated coverage and
+still requires device validation. Device-test resume restoration, notification
+seeking, lyrics with representative tagged files and sidecars,
+recursive/non-recursive folder queues, and the persisted recursion switch, then
+rerun `flutter analyze` and `flutter test` separately.
