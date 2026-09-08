@@ -49,10 +49,9 @@ class LibraryManager {
     final cache = await _storage.loadBuiltLibrary();
 
     final savedSelection = settings.selectedLibraryName;
-    final savedSelectionExists = savedSelection != null &&
-        settings.libraries.any(
-              (library) => library.name == savedSelection,
-        );
+    final savedSelectionExists =
+        savedSelection != null &&
+        settings.libraries.any((library) => library.name == savedSelection);
 
     final String? selectedLibraryName;
 
@@ -70,6 +69,7 @@ class LibraryManager {
         rootUri: settings.rootUri,
         libraries: settings.libraries,
         selectedLibraryName: selectedLibraryName,
+        ignoreLibrary: settings.ignoreLibrary,
       );
 
       await _storage.save(settings);
@@ -103,6 +103,7 @@ class LibraryManager {
       rootUri: treeUri,
       libraries: _state.settings.libraries,
       selectedLibraryName: _state.selectedLibraryName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
 
     await _storage.save(newSettings);
@@ -133,12 +134,10 @@ class LibraryManager {
 
   Future<void> selectLibrary(String name) async {
     final exists = _state.settings.libraries.any(
-          (library) => library.name == name,
+      (library) => library.name == name,
     );
     if (!exists) {
-      throw ArgumentError(
-        'Library "$name" does not exist.',
-      );
+      throw ArgumentError('Library "$name" does not exist.');
     }
 
     final temporaryLibraryActive =
@@ -152,6 +151,7 @@ class LibraryManager {
       rootUri: _state.settings.rootUri,
       libraries: _state.settings.libraries,
       selectedLibraryName: name,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
 
     await _storage.save(newSettings);
@@ -159,8 +159,7 @@ class LibraryManager {
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: name,
-      builtLibraryName:
-      temporaryLibraryActive ? null : _state.builtLibraryName,
+      builtLibraryName: temporaryLibraryActive ? null : _state.builtLibraryName,
       songs: temporaryLibraryActive ? const [] : _state.songs,
       scanning: false,
     );
@@ -168,34 +167,28 @@ class LibraryManager {
 
   Future<void> addLibrary(MusicLibrary library) async {
     if (_state.settings.libraries.any(
-          (existing) => existing.name == library.name,
+      (existing) => existing.name == library.name,
     )) {
-      throw ArgumentError(
-        'A library named "${library.name}" already exists.',
-      );
+      throw ArgumentError('A library named "${library.name}" already exists.');
     }
 
-    final newLibraries = [
-      ..._state.settings.libraries,
-      library,
-    ];
+    final newLibraries = [..._state.settings.libraries, library];
 
     final wasUnselected = _state.selectedLibraryName == null;
-    final newSelectedName =
-        _state.selectedLibraryName ?? library.name;
+    final newSelectedName = _state.selectedLibraryName ?? library.name;
 
     final newSettings = AppSettings(
       rootUri: _state.settings.rootUri,
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
     await _storage.save(newSettings);
 
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: newSelectedName,
-      builtLibraryName:
-      wasUnselected ? null : _state.builtLibraryName,
+      builtLibraryName: wasUnselected ? null : _state.builtLibraryName,
       songs: wasUnselected ? const [] : _state.songs,
       scanning: false,
     );
@@ -203,16 +196,13 @@ class LibraryManager {
 
   Future<void> updateLibrary(MusicLibrary library) async {
     final exists = _state.settings.libraries.any(
-          (existing) => existing.name == library.name,
+      (existing) => existing.name == library.name,
     );
     if (!exists) {
-      throw ArgumentError(
-        'A library named "${library.name}" does not exist.',
-      );
+      throw ArgumentError('A library named "${library.name}" does not exist.');
     }
 
-    final newLibraries =
-    _state.settings.libraries.map((existing) {
+    final newLibraries = _state.settings.libraries.map((existing) {
       if (existing.name != library.name) {
         return existing;
       }
@@ -222,11 +212,11 @@ class LibraryManager {
       rootUri: _state.settings.rootUri,
       libraries: newLibraries,
       selectedLibraryName: _state.selectedLibraryName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
     await _storage.save(newSettings);
 
-    final invalidatesBuiltLibrary =
-        library.name == _state.builtLibraryName;
+    final invalidatesBuiltLibrary = library.name == _state.builtLibraryName;
 
     if (invalidatesBuiltLibrary) {
       await _storage.clearBuiltLibrary();
@@ -238,34 +228,52 @@ class LibraryManager {
       builtLibraryName: invalidatesBuiltLibrary
           ? null
           : _state.builtLibraryName,
-      songs: invalidatesBuiltLibrary
-          ? const []
-          : _state.songs,
+      songs: invalidatesBuiltLibrary ? const [] : _state.songs,
       scanning: false,
     );
   }
 
-  Future<void> renameLibrary(
-      String oldName,
-      String newName,
-      ) async {
+  Future<void> updateIgnoreLibrary(MusicLibrary library) async {
+    final normalized = MusicLibrary(
+      name: defaultIgnoreLibrary.name,
+      buildMode: LibraryBuildMode.includeNone,
+      commands: library.commands
+          .map(
+            (command) =>
+                LibraryCommand.create(include: true, path: command.path),
+          )
+          .toList(),
+    );
+    final newSettings = AppSettings(
+      rootUri: _state.settings.rootUri,
+      libraries: _state.settings.libraries,
+      selectedLibraryName: _state.selectedLibraryName,
+      ignoreLibrary: normalized,
+    );
+    await _storage.save(newSettings);
+    await _storage.clearBuiltLibrary();
+    _state = LibraryState(
+      settings: newSettings,
+      selectedLibraryName: _state.selectedLibraryName,
+      builtLibraryName: null,
+      songs: const [],
+      scanning: false,
+    );
+  }
+
+  Future<void> renameLibrary(String oldName, String newName) async {
     final trimmedName = newName.trim();
     if (trimmedName.isEmpty) {
-      throw ArgumentError(
-        'Library name cannot be empty.',
-      );
+      throw ArgumentError('Library name cannot be empty.');
     }
     if (oldName != trimmedName &&
         _state.settings.libraries.any(
-              (library) => library.name == trimmedName,
+          (library) => library.name == trimmedName,
         )) {
-      throw ArgumentError(
-        'A library named "$trimmedName" already exists.',
-      );
+      throw ArgumentError('A library named "$trimmedName" already exists.');
     }
 
-    final newLibraries =
-    _state.settings.libraries.map((library) {
+    final newLibraries = _state.settings.libraries.map((library) {
       if (library.name != oldName) {
         return library;
       }
@@ -277,13 +285,11 @@ class LibraryManager {
       );
     }).toList();
 
-    final newSelectedName =
-    _state.selectedLibraryName == oldName
+    final newSelectedName = _state.selectedLibraryName == oldName
         ? trimmedName
         : _state.selectedLibraryName;
 
-    final newBuiltName =
-    _state.builtLibraryName == oldName
+    final newBuiltName = _state.builtLibraryName == oldName
         ? trimmedName
         : _state.builtLibraryName;
 
@@ -291,12 +297,12 @@ class LibraryManager {
       rootUri: _state.settings.rootUri,
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
 
     await _storage.save(newSettings);
 
-    if (_state.builtLibraryName == oldName &&
-        newBuiltName != null) {
+    if (_state.builtLibraryName == oldName && newBuiltName != null) {
       await _persistBuiltLibrary(
         settings: newSettings,
         libraryName: newBuiltName,
@@ -323,10 +329,9 @@ class LibraryManager {
     if (newLibraries.isNotEmpty) {
       final previousSelectionStillExists =
           _state.selectedLibraryName != name &&
-              newLibraries.any(
-                    (library) =>
-                library.name == _state.selectedLibraryName,
-              );
+          newLibraries.any(
+            (library) => library.name == _state.selectedLibraryName,
+          );
 
       newSelectedName = previousSelectionStillExists
           ? _state.selectedLibraryName
@@ -337,30 +342,26 @@ class LibraryManager {
       rootUri: _state.settings.rootUri,
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
     );
     await _storage.save(newSettings);
 
-    final deletedBuiltLibrary =
-        _state.builtLibraryName == name;
+    final deletedBuiltLibrary = _state.builtLibraryName == name;
     if (deletedBuiltLibrary) {
       await _storage.clearBuiltLibrary();
     }
     _state = LibraryState(
       settings: newSettings,
       selectedLibraryName: newSelectedName,
-      builtLibraryName: deletedBuiltLibrary
-          ? null
-          : _state.builtLibraryName,
-      songs: deletedBuiltLibrary
-          ? const []
-          : _state.songs,
+      builtLibraryName: deletedBuiltLibrary ? null : _state.builtLibraryName,
+      songs: deletedBuiltLibrary ? const [] : _state.songs,
       scanning: false,
     );
   }
 
   Future<List<Song>> buildTemporaryFolderLibrary(
-      String relativeFolderPath,
-      ) async {
+    String relativeFolderPath,
+  ) async {
     final normalizedPath = relativeFolderPath
         .replaceAll('\\', '/')
         .split('/')
@@ -374,20 +375,17 @@ class LibraryManager {
 
     final temporaryLibrary = normalizedPath.isEmpty
         ? MusicLibrary(
-      name: _temporaryFolderLibraryName,
-      buildMode: LibraryBuildMode.includeAll,
-      commands: const [],
-    )
+            name: _temporaryFolderLibraryName,
+            buildMode: LibraryBuildMode.includeAll,
+            commands: const [],
+          )
         : MusicLibrary(
-      name: _temporaryFolderLibraryName,
-      buildMode: LibraryBuildMode.includeNone,
-      commands: [
-        LibraryCommand.create(
-          include: true,
-          path: normalizedPath,
-        ),
-      ],
-    );
+            name: _temporaryFolderLibraryName,
+            buildMode: LibraryBuildMode.includeNone,
+            commands: [
+              LibraryCommand.create(include: true, path: normalizedPath),
+            ],
+          );
 
     // A temporary folder build replaces any previously persisted built library.
     await _storage.clearBuiltLibrary();
@@ -442,7 +440,11 @@ class LibraryManager {
       scanning: true,
     );
     try {
-      final songs = await _scanner.rebuild(root, library);
+      final songs = await _scanner.rebuild(
+        root,
+        library,
+        ignoreLibrary: _state.settings.ignoreLibrary,
+      );
       final builtLibraryName = _state.selectedLibraryName!;
 
       await _persistBuiltLibrary(
@@ -470,14 +472,14 @@ class LibraryManager {
     }
   }
 
-  String _librarySignature(MusicLibrary library) {
-    return jsonEncode(library.toJson());
+  String _librarySignature(MusicLibrary library, AppSettings settings) {
+    return jsonEncode({
+      'library': library.toJson(),
+      'ignoreLibrary': settings.ignoreLibrary.toJson(),
+    });
   }
 
-  MusicLibrary? _findLibrary(
-      AppSettings settings,
-      String name,
-      ) {
+  MusicLibrary? _findLibrary(AppSettings settings, String name) {
     for (final library in settings.libraries) {
       if (library.name == name) {
         return library;
@@ -487,25 +489,18 @@ class LibraryManager {
     return null;
   }
 
-  bool _isCacheValid(
-      BuiltLibraryCache cache,
-      AppSettings settings,
-      ) {
+  bool _isCacheValid(BuiltLibraryCache cache, AppSettings settings) {
     if (cache.rootUri != settings.rootUri) {
       return false;
     }
 
-    final library = _findLibrary(
-      settings,
-      cache.libraryName,
-    );
+    final library = _findLibrary(settings, cache.libraryName);
 
     if (library == null) {
       return false;
     }
 
-    return cache.librarySignature ==
-        _librarySignature(library);
+    return cache.librarySignature == _librarySignature(library, settings);
   }
 
   Future<void> _persistBuiltLibrary({
@@ -513,10 +508,7 @@ class LibraryManager {
     required String libraryName,
     required List<Song> songs,
   }) async {
-    final library = _findLibrary(
-      settings,
-      libraryName,
-    );
+    final library = _findLibrary(settings, libraryName);
 
     if (library == null) {
       await _storage.clearBuiltLibrary();
@@ -527,7 +519,7 @@ class LibraryManager {
       BuiltLibraryCache(
         rootUri: settings.rootUri,
         libraryName: libraryName,
-        librarySignature: _librarySignature(library),
+        librarySignature: _librarySignature(library, settings),
         songs: songs,
       ),
     );

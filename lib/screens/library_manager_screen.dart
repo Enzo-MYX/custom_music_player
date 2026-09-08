@@ -22,15 +22,14 @@ class LibraryManagerScreen extends StatefulWidget {
   final bool loadOnOpen;
 
   @override
-  State<LibraryManagerScreen> createState() =>
-      _LibraryManagerScreenState();
+  State<LibraryManagerScreen> createState() => _LibraryManagerScreenState();
 }
 
-class _LibraryManagerScreenState
-    extends State<LibraryManagerScreen> {
+class _LibraryManagerScreenState extends State<LibraryManagerScreen> {
   LibraryManager get _manager => widget.manager;
 
   bool _loading = true;
+  bool _showIgnoreLibrary = false;
   String? _error;
 
   LibraryState get _state => _manager.state;
@@ -93,9 +92,7 @@ class _LibraryManagerScreenState
   }
 
   Future<void> _createLibrary() async {
-    final result = await _showLibraryNameDialog(
-      title: 'New Library',
-    );
+    final result = await _showLibraryNameDialog(title: 'New Library');
 
     if (result == null) {
       return;
@@ -120,9 +117,7 @@ class _LibraryManagerScreenState
     }
   }
 
-  Future<void> _renameLibrary(
-      MusicLibrary library,
-      ) async {
+  Future<void> _renameLibrary(MusicLibrary library) async {
     final result = await _showLibraryNameDialog(
       title: 'Rename Library',
       initialName: library.name,
@@ -133,10 +128,7 @@ class _LibraryManagerScreenState
     }
 
     try {
-      await _manager.renameLibrary(
-        library.name,
-        result,
-      );
+      await _manager.renameLibrary(library.name, result);
 
       if (!mounted) {
         return;
@@ -148,9 +140,7 @@ class _LibraryManagerScreenState
     }
   }
 
-  Future<void> _deleteLibrary(
-      MusicLibrary library,
-      ) async {
+  Future<void> _deleteLibrary(MusicLibrary library) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -158,8 +148,8 @@ class _LibraryManagerScreenState
           title: const Text('Delete Library?'),
           content: Text(
             'Delete "${library.name}"?\n\n'
-                'This only deletes the library recipe. '
-                'Your music files will not be touched.',
+            'This only deletes the library recipe. '
+            'Your music files will not be touched.',
           ),
           actions: [
             TextButton(
@@ -184,9 +174,7 @@ class _LibraryManagerScreenState
     }
 
     try {
-      await _manager.deleteLibrary(
-        library.name,
-      );
+      await _manager.deleteLibrary(library.name);
 
       if (!mounted) {
         return;
@@ -198,13 +186,9 @@ class _LibraryManagerScreenState
     }
   }
 
-  Future<void> _selectLibrary(
-      MusicLibrary library,
-      ) async {
+  Future<void> _selectLibrary(MusicLibrary library) async {
     try {
-      await _manager.selectLibrary(
-        library.name,
-      );
+      await _manager.selectLibrary(library.name);
 
       if (!mounted) {
         return;
@@ -245,6 +229,31 @@ class _LibraryManagerScreenState
     }
   }
 
+  Future<void> _editIgnoreLibrary() async {
+    try {
+      final root = await _manager.getRoot();
+      if (root == null) {
+        _showError('No valid root has been selected.');
+        return;
+      }
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LibraryEditorScreen(
+            manager: _manager,
+            library: _state.settings.ignoreLibrary,
+            root: root,
+            ignoreOnly: true,
+          ),
+        ),
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showError(e.toString());
+    }
+  }
+
   Future<void> _rebuild() async {
     if (_state.selectedLibrary == null) {
       _showError('Select a library first.');
@@ -267,7 +276,7 @@ class _LibraryManagerScreenState
         SnackBar(
           content: Text(
             'Library rebuilt: '
-                '${_manager.state.songs.length} songs',
+            '${_manager.state.songs.length} songs',
           ),
         ),
       );
@@ -286,9 +295,7 @@ class _LibraryManagerScreenState
     required String title,
     String initialName = '',
   }) async {
-    final controller = TextEditingController(
-      text: initialName,
-    );
+    final controller = TextEditingController(text: initialName);
 
     return showDialog<String>(
       context: context,
@@ -298,9 +305,7 @@ class _LibraryManagerScreenState
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Library name',
-            ),
+            decoration: const InputDecoration(labelText: 'Library name'),
             onSubmitted: (value) {
               final name = value.trim();
 
@@ -333,42 +338,29 @@ class _LibraryManagerScreenState
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
-      return Scaffold(
-        body: Center(
-          child: Text(_error!),
-        ),
-      );
+      return Scaffold(body: Center(child: Text(_error!)));
     }
 
     final rootUri = _state.settings.rootUri;
     final selected = _state.selectedLibrary;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Music Library'),
-      ),
+      appBar: AppBar(title: const Text('Music Library')),
       body: Column(
         children: [
-          if (_state.scanning)
-            const LinearProgressIndicator(),
+          if (_state.scanning) const LinearProgressIndicator(),
 
           _buildRootSection(rootUri),
 
@@ -376,9 +368,7 @@ class _LibraryManagerScreenState
 
           _buildLibraryHeader(),
 
-          Expanded(
-            child: _buildLibraryList(),
-          ),
+          Expanded(child: _buildLibraryList()),
 
           _buildBottomSection(selected),
         ],
@@ -387,46 +377,70 @@ class _LibraryManagerScreenState
   }
 
   Widget _buildRootSection(String? rootUri) {
-    return ListTile(
-      leading: const Icon(Icons.folder),
-      title: const Text('Root Directory'),
-      subtitle: Text(
-        rootUri ?? 'No root directory selected',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: FilledButton.tonal(
-        onPressed: _state.scanning
-            ? null
-            : _chooseRoot,
-        child: Text(
-          rootUri == null ? 'Choose' : 'Change',
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.folder),
+          title: const Text('Root Directory'),
+          subtitle: Text(
+            rootUri ?? 'No root directory selected',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Wrap(
+            spacing: 8,
+            children: [
+              FilledButton.tonal(
+                onPressed: _state.scanning ? null : _chooseRoot,
+                child: Text(rootUri == null ? 'Choose' : 'Change'),
+              ),
+              if (rootUri != null)
+                OutlinedButton.icon(
+                  onPressed: _state.scanning
+                      ? null
+                      : () => setState(() {
+                          _showIgnoreLibrary = !_showIgnoreLibrary;
+                        }),
+                  icon: Icon(
+                    _showIgnoreLibrary ? Icons.expand_less : Icons.block,
+                  ),
+                  label: const Text('Ignore'),
+                ),
+            ],
+          ),
         ),
-      ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 200),
+          crossFadeState: _showIgnoreLibrary
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: const SizedBox.shrink(),
+          secondChild: ListTile(
+            contentPadding: const EdgeInsets.only(left: 56, right: 16),
+            leading: const Icon(Icons.block),
+            title: const Text('Ignored files'),
+            subtitle: Text(
+              '${_state.settings.ignoreLibrary.commands.length} ignored paths',
+            ),
+            trailing: const Icon(Icons.edit_outlined),
+            enabled: !_state.scanning,
+            onTap: _editIgnoreLibrary,
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildLibraryHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        8,
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
-          Text(
-            'Libraries',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge,
-          ),
+          Text('Libraries', style: Theme.of(context).textTheme.titleLarge),
           const Spacer(),
           IconButton(
             tooltip: 'New Library',
-            onPressed:
-            _state.scanning ? null : _createLibrary,
+            onPressed: _state.scanning ? null : _createLibrary,
             icon: const Icon(Icons.add),
           ),
         ],
@@ -441,7 +455,7 @@ class _LibraryManagerScreenState
       return const Center(
         child: Text(
           'No libraries yet.\n'
-              'Press + to create one.',
+          'Press + to create one.',
           textAlign: TextAlign.center,
         ),
       );
@@ -452,8 +466,7 @@ class _LibraryManagerScreenState
       itemBuilder: (context, index) {
         final library = libraries[index];
 
-        final selected =
-            library.name == _state.selectedLibraryName;
+        final selected = library.name == _state.selectedLibraryName;
 
         return ListTile(
           selected: selected,
@@ -465,7 +478,7 @@ class _LibraryManagerScreenState
           title: Text(library.name),
           subtitle: Text(
             '${library.buildMode.name} • '
-                '${library.commands.length} commands',
+            '${library.commands.length} commands',
           ),
           onTap: () => _selectLibrary(library),
           trailing: PopupMenuButton<String>(
@@ -481,18 +494,9 @@ class _LibraryManagerScreenState
             },
             itemBuilder: (context) {
               return const [
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Text('Edit'),
-                ),
-                PopupMenuItem(
-                  value: 'rename',
-                  child: Text('Rename'),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete'),
-                ),
+                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
               ];
             },
           ),
@@ -501,23 +505,18 @@ class _LibraryManagerScreenState
     );
   }
 
-  Widget _buildBottomSection(
-      MusicLibrary? selected,
-      ) {
+  Widget _buildBottomSection(MusicLibrary? selected) {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               selected == null
                   ? 'No library selected'
                   : 'Selected: ${selected.name}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 8),
@@ -532,16 +531,14 @@ class _LibraryManagerScreenState
 
             FilledButton.icon(
               onPressed:
-              _state.scanning ||
-                  selected == null ||
-                  _state.settings.rootUri == null
+                  _state.scanning ||
+                      selected == null ||
+                      _state.settings.rootUri == null
                   ? null
                   : _rebuild,
               icon: const Icon(Icons.refresh),
               label: Text(
-                _state.scanning
-                    ? 'Rebuilding...'
-                    : 'Rebuild Library',
+                _state.scanning ? 'Rebuilding...' : 'Rebuild Library',
               ),
             ),
           ],

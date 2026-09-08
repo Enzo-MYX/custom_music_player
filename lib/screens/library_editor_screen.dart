@@ -12,17 +12,18 @@ class LibraryEditorScreen extends StatefulWidget {
   final LibraryManager manager;
   final MusicLibrary library;
   final SafDocumentFile root;
+  final bool ignoreOnly;
 
   const LibraryEditorScreen({
     super.key,
     required this.manager,
     required this.library,
     required this.root,
+    this.ignoreOnly = false,
   });
 
   @override
-  State<LibraryEditorScreen> createState() =>
-      _LibraryEditorScreenState();
+  State<LibraryEditorScreen> createState() => _LibraryEditorScreenState();
 }
 
 class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
@@ -34,12 +35,11 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
     super.initState();
 
     _buildMode = widget.library.buildMode;
-    _commands = List<LibraryCommand>.from(
-      widget.library.commands,
-    );
+    _commands = List<LibraryCommand>.from(widget.library.commands);
   }
 
   void _toggleBuildMode(bool includeAll) {
+    if (widget.ignoreOnly) return;
     setState(() {
       _buildMode = includeAll
           ? LibraryBuildMode.includeAll
@@ -100,42 +100,40 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
   }
 
   Future<void> _addCommand() async {
-    final include = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Add Command'),
-          content: const Text(
-            'Choose what should happen to the selected folder.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(false);
-              },
-              child: const Text('Exclude'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop(true);
-              },
-              child: const Text('Include'),
-            ),
-          ],
-        );
-      },
-    );
+    final include = widget.ignoreOnly
+        ? true
+        : await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Add Command'),
+                content: const Text(
+                  'Choose what should happen to the selected folder.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(false);
+                    },
+                    child: const Text('Exclude'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(true);
+                    },
+                    child: const Text('Include'),
+                  ),
+                ],
+              );
+            },
+          );
 
     if (include == null || !mounted) {
       return;
     }
 
     final selection = await Navigator.of(context).push<Object>(
-      MaterialPageRoute(
-        builder: (_) => PathSelectorScreen(
-          root: widget.root,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => PathSelectorScreen(root: widget.root)),
     );
 
     if (selection == null || !mounted) {
@@ -153,9 +151,9 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
   }
 
   Future<void> _addCommands(
-      bool requestedInclude,
-      List<String> selectedPaths,
-      ) async {
+    bool requestedInclude,
+    List<String> selectedPaths,
+  ) async {
     final commandsToAdd = <LibraryCommand>[];
     final conflictingPaths = <String>[];
     var selectedRoot = false;
@@ -166,6 +164,16 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       // A root rule is represented by the library's build mode, never by a
       // command. It therefore applies globally and needs no confirmation.
       if (normalizedPath.isEmpty) {
+        if (widget.ignoreOnly) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('The root itself cannot be ignored.'),
+              ),
+            );
+          }
+          continue;
+        }
         selectedRoot = true;
         continue;
       }
@@ -176,7 +184,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
       );
 
       final alreadyExists = _commands.any(
-            (existing) => existing.path == command.path,
+        (existing) => existing.path == command.path,
       );
 
       if (alreadyExists) {
@@ -213,7 +221,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
     setState(() {
       for (final path in conflictingPaths) {
         final existingIndex = _commands.indexWhere(
-              (command) => command.path == path,
+          (command) => command.path == path,
         );
 
         if (existingIndex == -1) {
@@ -228,9 +236,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
     });
   }
 
-  Future<bool?> _showConflictResolutionDialog(
-      List<String> conflictingPaths,
-      ) {
+  Future<bool?> _showConflictResolutionDialog(List<String> conflictingPaths) {
     final isSinglePath = conflictingPaths.length == 1;
 
     return showDialog<bool>(
@@ -241,9 +247,9 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
           content: Text(
             isSinglePath
                 ? '"${conflictingPaths.first}" already has a command. '
-                'Choose the rule that should apply.'
+                      'Choose the rule that should apply.'
                 : '${conflictingPaths.length} selected paths already have '
-                'commands. Choose one rule to apply to all of them.',
+                      'commands. Choose one rule to apply to all of them.',
           ),
           actions: [
             TextButton(
@@ -274,14 +280,14 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
     final updatedLibrary = MusicLibrary(
       name: widget.library.name,
       buildMode: _buildMode,
-      commands: List<LibraryCommand>.unmodifiable(
-        _commands,
-      ),
+      commands: List<LibraryCommand>.unmodifiable(_commands),
     );
 
-    await widget.manager.updateLibrary(
-      updatedLibrary,
-    );
+    if (widget.ignoreOnly) {
+      await widget.manager.updateIgnoreLibrary(updatedLibrary);
+    } else {
+      await widget.manager.updateLibrary(updatedLibrary);
+    }
 
     if (!mounted) {
       return;
@@ -317,7 +323,8 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
           return;
         }
         _handleBack();
-      }, child: Scaffold(
+      },
+      child: Scaffold(
         appBar: AppBar(
           title: Text(widget.library.name),
           actions: [
@@ -332,9 +339,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
           children: [
             _buildBuildModeSection(),
             const Divider(height: 1),
-            Expanded(
-              child: _buildCommandList(),
-            ),
+            Expanded(child: _buildCommandList()),
             _buildAddButton(),
           ],
         ),
@@ -343,13 +348,20 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
   }
 
   Widget _buildBuildModeSection() {
-    final includeAll =
-        _buildMode == LibraryBuildMode.includeAll;
+    if (widget.ignoreOnly) {
+      return const ListTile(
+        leading: Icon(Icons.block),
+        title: Text('Ignored everywhere'),
+        subtitle: Text(
+          'Selected files and folders are excluded from every normal library.',
+        ),
+      );
+    }
+
+    final includeAll = _buildMode == LibraryBuildMode.includeAll;
 
     return SwitchListTile(
-      title: const Text(
-        'Include everything by default',
-      ),
+      title: const Text('Include everything by default'),
       subtitle: Text(
         includeAll
             ? 'Files are included unless excluded by a command.'
@@ -362,27 +374,19 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
 
   Widget _buildCommandList() {
     if (_commands.isEmpty) {
-      return const Center(
-        child: Text(
-          'No commands yet.',
-        ),
-      );
+      return const Center(child: Text('No commands yet.'));
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(
-        vertical: 8,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _commands.length,
       itemBuilder: (context, index) {
         final command = _commands[index];
 
         return ListTile(
           leading: Text(
-            command.include ? '+' : '-',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge,
+            widget.ignoreOnly ? '−' : (command.include ? '+' : '-'),
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           title: Text(
             command.path,
@@ -394,9 +398,7 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
             onPressed: () {
               _deleteCommand(index);
             },
-            icon: const Icon(
-              Icons.delete_outline,
-            ),
+            icon: const Icon(Icons.delete_outline),
           ),
         );
       },
@@ -411,12 +413,8 @@ class _LibraryEditorScreenState extends State<LibraryEditorScreen> {
           width: double.infinity,
           child: FilledButton.icon(
             onPressed: _addCommand,
-            icon: const Icon(
-              Icons.add,
-            ),
-            label: const Text(
-              'Add Command',
-            ),
+            icon: const Icon(Icons.add),
+            label: const Text('Add Files or Folders'),
           ),
         ),
       ),

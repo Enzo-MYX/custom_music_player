@@ -7,6 +7,27 @@ import '../models/song.dart';
 import '../services/library_manager.dart';
 import '../services/path_utils.dart';
 import '../services/playback_controller.dart';
+import 'playback_screen.dart';
+
+class _FolderSearchResult {
+  const _FolderSearchResult({
+    required this.entry,
+    required this.relativePath,
+    required this.parentDirectory,
+    required this.parentPath,
+    this.song,
+  });
+
+  final SafDocumentFile entry;
+  final String relativePath;
+  final SafDocumentFile parentDirectory;
+  final String parentPath;
+
+  /// Non-null only when this result represents a playable audio file.
+  final Song? song;
+
+  bool get isDirectory => entry.isDir;
+}
 
 class FolderBrowserScreen extends StatefulWidget {
   const FolderBrowserScreen({
@@ -30,21 +51,36 @@ class FolderBrowserScreen extends StatefulWidget {
 
 class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
   final Saf _saf = Saf();
+  final TextEditingController _searchController = TextEditingController();
 
   SafDocumentFile? _root;
   SafDocumentFile? _currentDirectory;
 
   String _currentPath = '';
+
+  // Text currently visible in the input field.
+  String _searchDraft = '';
+
+  // The most recently submitted search. Results are shown only for this text.
+  String _searchText = '';
+
   List<SafDocumentFile> _entries = const [];
+  List<_FolderSearchResult> _searchResults = const [];
 
   bool _recursive = true;
   bool _loading = true;
   bool _buildingQueue = false;
+  bool _searching = false;
+
   String? _error;
+  String? _searchError;
 
   // Incrementing this invalidates an older recursive scan when the user starts
   // another song or changes the recursion setting.
   int _queueBuildGeneration = 0;
+
+  // Incrementing this invalidates an older search after the search text changes.
+  int _searchGeneration = 0;
 
   @override
   void initState() {
@@ -93,8 +129,8 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
   }
 
   Future<List<SafDocumentFile>> _listVisibleEntries(
-      SafDocumentFile directory,
-      ) async {
+    SafDocumentFile directory,
+  ) async {
     final entries = await _saf.list(directory.uri);
 
     final visibleEntries = entries.where((entry) {
@@ -105,17 +141,14 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     return visibleEntries;
   }
 
-  int _compareBrowserEntries(
-      SafDocumentFile first,
-      SafDocumentFile second,
-      ) {
+  int _compareBrowserEntries(SafDocumentFile first, SafDocumentFile second) {
     if (first.isDir != second.isDir) {
       return first.isDir ? -1 : 1;
     }
 
-    final insensitiveComparison = first.name
-        .toLowerCase()
-        .compareTo(second.name.toLowerCase());
+    final insensitiveComparison = first.name.toLowerCase().compareTo(
+      second.name.toLowerCase(),
+    );
 
     if (insensitiveComparison != 0) {
       return insensitiveComparison;
@@ -193,16 +226,13 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       return;
     }
 
-    await _loadDirectory(
-      directory: parent,
-      relativePath: parentPath,
-    );
+    await _loadDirectory(directory: parent, relativePath: parentPath);
   }
 
   Future<SafDocumentFile?> _findDirectory(
-      SafDocumentFile root,
-      String relativePath,
-      ) async {
+    SafDocumentFile root,
+    String relativePath,
+  ) async {
     if (relativePath.isEmpty) {
       return root;
     }
@@ -228,6 +258,276 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     }
 
     return current;
+  }
+
+  void _onSearchChanged(String value) {
+    // Typing only updates the field UI. It does not start or alter a search.
+    setState(() {
+      _searchDraft = value;
+    });
+  }
+
+  void _submitSearch(String value) {
+    final keys = value
+        .split(',')
+        .map((key) => key.trim().toLowerCase())
+        .where((key) => key.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final generation = ++_searchGeneration;
+
+    setState(() {
+      _searchDraft = value;
+      _searchText = value;
+      _searchError = null;
+      _searchResults = const [];
+
+      if (keys.isEmpty) {
+        _searching = false;
+      }
+    });
+
+    if (keys.isEmpty) {
+      return;
+    }
+
+    unawaited(_runSearch(keys: keys, generation: generation));
+  }
+
+  void _clearSearch() {
+    ++_searchGeneration;
+    _searchController.clear();
+
+    setState(() {
+      _searchDraft = '';
+      _searchText = '';
+      _searching = false;
+      _searchError = null;
+      _searchResults = const [];
+    });
+  }
+
+  Future<void> _runSearch({
+    required List<String> keys,
+    required int generation,
+  }) async {
+    final root = _root;
+
+    if (root == null || generation != _searchGeneration) {
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _searchError = null;
+    });
+
+    try {
+      final results = <_FolderSearchResult>[];
+
+      await _scanSearchDirectory(
+        directory: root,
+        relativeDirectory: '',
+        keys: keys,
+        results: results,
+        generation: generation,
+      );
+
+      if (!mounted || generation != _searchGeneration) {
+        return;
+      }
+
+      results.sort(_compareSearchResults);
+
+      setState(() {
+        _searchResults = results;
+        _searching = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _searchGeneration) {
+        return;
+      }
+
+      setState(() {
+        _searching = false;
+        _searchError = 'Unable to search the music folders: $error';
+      });
+    }
+  }
+
+  Future<void> _scanSearchDirectory({
+    required SafDocumentFile directory,
+    required String relativeDirectory,
+    required List<String> keys,
+    required List<_FolderSearchResult> results,
+    required int generation,
+  }) async {
+    if (generation != _searchGeneration) {
+      return;
+    }
+
+    final entries = await _saf.list(directory.uri);
+
+    if (generation != _searchGeneration) {
+      return;
+    }
+
+    // Build songs one directory at a time so same-basename .lrc sidecars remain
+    // attached to their corresponding audio files.
+    final songsByUri = <String, Song>{
+      for (final song in _songsFromEntries(
+        entries: entries,
+        relativeDirectory: relativeDirectory,
+      ))
+        song.uri: song,
+    };
+
+    final sortedEntries = entries.toList()..sort(_compareBrowserEntries);
+
+    for (final entry in sortedEntries) {
+      if (generation != _searchGeneration) {
+        return;
+      }
+
+      final relativePath = relativeDirectory.isEmpty
+          ? entry.name
+          : '$relativeDirectory/${entry.name}';
+
+      if (entry.isDir) {
+        if (_matchesAnySearchKey(entry.name, keys)) {
+          results.add(
+            _FolderSearchResult(
+              entry: entry,
+              relativePath: relativePath,
+              parentDirectory: directory,
+              parentPath: relativeDirectory,
+            ),
+          );
+        }
+
+        await _scanSearchDirectory(
+          directory: entry,
+          relativeDirectory: relativePath,
+          keys: keys,
+          results: results,
+          generation: generation,
+        );
+        continue;
+      }
+
+      if (_isLyricsFile(entry.name)) {
+        continue;
+      }
+
+      if (_matchesAnySearchKey(entry.name, keys)) {
+        final song = songsByUri[entry.uri];
+
+        if (song != null) {
+          results.add(
+            _FolderSearchResult(
+              entry: entry,
+              relativePath: relativePath,
+              parentDirectory: directory,
+              parentPath: relativeDirectory,
+              song: song,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  bool _matchesAnySearchKey(String value, List<String> keys) {
+    final normalizedValue = value.toLowerCase();
+    return keys.any(normalizedValue.contains);
+  }
+
+  int _compareSearchResults(
+    _FolderSearchResult first,
+    _FolderSearchResult second,
+  ) {
+    if (first.isDirectory != second.isDirectory) {
+      return first.isDirectory ? -1 : 1;
+    }
+
+    final insensitiveComparison = first.relativePath.toLowerCase().compareTo(
+      second.relativePath.toLowerCase(),
+    );
+
+    if (insensitiveComparison != 0) {
+      return insensitiveComparison;
+    }
+
+    return first.relativePath.compareTo(second.relativePath);
+  }
+
+  Future<void> _openSearchFolder(_FolderSearchResult result) async {
+    _clearSearch();
+
+    await _loadDirectory(
+      directory: result.entry,
+      relativePath: PathUtils.normalize(result.relativePath),
+    );
+  }
+
+  Future<void> _playSearchResult(_FolderSearchResult selectedResult) async {
+    final selectedSong = selectedResult.song;
+
+    if (selectedSong == null) {
+      return;
+    }
+
+    final matchingSongs = _searchResults
+        .map((result) => result.song)
+        .whereType<Song>()
+        .toList();
+
+    _sortSongs(matchingSongs);
+
+    final selectedIndex = matchingSongs.indexWhere(
+      (song) => song.uri == selectedSong.uri,
+    );
+
+    if (selectedIndex < 0) {
+      setState(() {
+        _searchError = 'The selected audio file is no longer available.';
+      });
+      return;
+    }
+
+    try {
+      ++_queueBuildGeneration;
+
+      await widget.playbackController.startNormalQueue(
+        matchingSongs,
+        selectedIndex,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _openPlaybackScreen();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _searchError = 'Unable to play this search result: $error';
+      });
+    }
+  }
+
+  void _openPlaybackScreen() {
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PlaybackScreen(controller: widget.playbackController),
+        ),
+      ),
+    );
   }
 
   Future<void> _setRecursive(bool enabled) async {
@@ -270,7 +570,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       );
 
       final selectedIndex = directSongs.indexWhere(
-            (song) => song.uri == selectedFile.uri,
+        (song) => song.uri == selectedFile.uri,
       );
 
       if (selectedIndex < 0) {
@@ -282,7 +582,13 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
         selectedIndex,
       );
 
-      if (!_recursive || !mounted || generation != _queueBuildGeneration) {
+      if (!mounted || generation != _queueBuildGeneration) {
+        return;
+      }
+
+      _openPlaybackScreen();
+
+      if (!_recursive) {
         return;
       }
 
@@ -371,10 +677,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     }
 
     songs.addAll(
-      _songsFromEntries(
-        entries: entries,
-        relativeDirectory: relativeDirectory,
-      ),
+      _songsFromEntries(entries: entries, relativeDirectory: relativeDirectory),
     );
 
     final directories = entries.where((entry) => entry.isDir).toList()
@@ -427,7 +730,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
           relativePath: relativePath,
           uri: entry.uri,
           lyricsUri:
-          sidecarLyricsByBasename[_basenameWithoutExtension(entry.name)],
+              sidecarLyricsByBasename[_basenameWithoutExtension(entry.name)],
         ),
       );
     }
@@ -438,9 +741,9 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
 
   void _sortSongs(List<Song> songs) {
     songs.sort((first, second) {
-      final insensitiveComparison = first.relativePath
-          .toLowerCase()
-          .compareTo(second.relativePath.toLowerCase());
+      final insensitiveComparison = first.relativePath.toLowerCase().compareTo(
+        second.relativePath.toLowerCase(),
+      );
 
       if (insensitiveComparison != 0) {
         return insensitiveComparison;
@@ -480,9 +783,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
-            widget.selectFolder ? 'Select folder' : 'Folders',
-          ),
+          title: Text(widget.selectFolder ? 'Select folder' : 'Folders'),
           actions: [
             IconButton(
               tooltip: 'Refresh root',
@@ -503,6 +804,29 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
                 onChanged: _loading ? null : _setRecursive,
               ),
               const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: TextField(
+                  controller: _searchController,
+                  enabled: !_loading,
+                  textInputAction: TextInputAction.search,
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _submitSearch,
+                  decoration: InputDecoration(
+                    hintText: 'Search folders and audio files',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchDraft.trim().isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: _clearSearch,
+                            icon: const Icon(Icons.clear),
+                          ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
             ],
             _buildPathBar(),
             const Divider(height: 1),
@@ -513,19 +837,19 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
         ),
         bottomNavigationBar: widget.selectFolder
             ? SafeArea(
-          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: FilledButton.icon(
-            onPressed: _loading
-                ? null
-                : () => Navigator.of(context).pop(_currentPath),
-            icon: const Icon(Icons.folder_open),
-            label: Text(
-              _currentPath.isEmpty
-                  ? 'Shuffle the root folder'
-                  : 'Shuffle this folder',
-            ),
-          ),
-        )
+                minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: FilledButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => Navigator.of(context).pop(_currentPath),
+                  icon: const Icon(Icons.folder_open),
+                  label: Text(
+                    _currentPath.isEmpty
+                        ? 'Shuffle the root folder'
+                        : 'Shuffle this folder',
+                  ),
+                ),
+              )
             : null,
       ),
     );
@@ -575,20 +899,24 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
                 onPressed: _currentDirectory == null
                     ? _loadInitialState
                     : () {
-                  final directory = _currentDirectory!;
-                  unawaited(
-                    _loadDirectory(
-                      directory: directory,
-                      relativePath: _currentPath,
-                    ),
-                  );
-                },
+                        final directory = _currentDirectory!;
+                        unawaited(
+                          _loadDirectory(
+                            directory: directory,
+                            relativePath: _currentPath,
+                          ),
+                        );
+                      },
                 child: const Text('Retry'),
               ),
             ],
           ),
         ),
       );
+    }
+
+    if (_searchText.split(',').any((key) => key.trim().isNotEmpty)) {
+      return _buildSearchContent();
     }
 
     if (_entries.isEmpty) {
@@ -603,11 +931,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
 
         return ListTile(
           leading: Icon(entry.isDir ? Icons.folder : Icons.music_note),
-          title: Text(
-            entry.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: entry.isDir
               ? const Icon(Icons.chevron_right)
               : widget.selectFolder
@@ -622,5 +946,73 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
         );
       },
     );
+  }
+
+  Widget _buildSearchContent() {
+    if (_searching) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('Searching all folders…'),
+          ],
+        ),
+      );
+    }
+
+    if (_searchError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _searchError!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      );
+    }
+
+    if (_searchResults.isEmpty) {
+      return const Center(child: Text('No matching folders or audio files.'));
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 128),
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final result = _searchResults[index];
+
+        return ListTile(
+          leading: Icon(result.isDirectory ? Icons.folder : Icons.music_note),
+          title: Text(
+            result.entry.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '/${result.relativePath}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: result.isDirectory
+              ? const Icon(Icons.chevron_right)
+              : const Icon(Icons.play_arrow),
+          onTap: result.isDirectory
+              ? () => _openSearchFolder(result)
+              : () => _playSearchResult(result),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    ++_searchGeneration;
+    ++_queueBuildGeneration;
+    _searchController.dispose();
+    super.dispose();
   }
 }

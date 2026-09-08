@@ -10,18 +10,29 @@ class LibraryScanner {
 
   LibraryScanner({Saf? saf}) : _saf = saf ?? Saf();
 
-  Future<List<Song>> rebuild(SafDocumentFile root, MusicLibrary library) async {
+  Future<List<Song>> rebuild(
+    SafDocumentFile root,
+    MusicLibrary library, {
+    MusicLibrary? ignoreLibrary,
+  }) async {
     final matcher = LibraryCommandMatcher(
       buildMode: library.buildMode,
       commands: library.commands,
     );
 
     final songs = <Song>[];
+    final ignoreMatcher = ignoreLibrary == null
+        ? null
+        : LibraryCommandMatcher(
+            buildMode: ignoreLibrary.buildMode,
+            commands: ignoreLibrary.commands,
+          );
 
     await _scanDirectory(
       directory: root,
       relativeDirectory: '',
       matcher: matcher,
+      ignoreMatcher: ignoreMatcher,
       songs: songs,
     );
 
@@ -32,6 +43,7 @@ class LibraryScanner {
     required SafDocumentFile directory,
     required String relativeDirectory,
     required LibraryCommandMatcher matcher,
+    required LibraryCommandMatcher? ignoreMatcher,
     required List<Song> songs,
   }) async {
     final entries = await _saf.list(directory.uri);
@@ -54,10 +66,12 @@ class LibraryScanner {
           directory: entry,
           relativeDirectory: relativePath,
           matcher: matcher,
+          ignoreMatcher: ignoreMatcher,
           songs: songs,
         );
       } else if (_extension(entry.name) != 'lrc') {
-        if (matcher.shouldInclude(relativePath)) {
+        if (matcher.shouldInclude(relativePath) &&
+            !(ignoreMatcher?.shouldInclude(relativePath) ?? false)) {
           songs.add(
             Song(
               relativePath: relativePath,

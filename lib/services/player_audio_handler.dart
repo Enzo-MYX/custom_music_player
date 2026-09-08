@@ -477,9 +477,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // starting playback do not depend on metadata or embedded artwork.
     _publishCurrentMediaItem();
 
-    await _player.setAudioSource(
-      just_audio.AudioSource.uri(Uri.parse(song.uri)),
-    );
+    final slowLoadTimer = Timer(const Duration(seconds: 10), () {
+      debugPrint('[audio] load exceeded 10 seconds: ${song.relativePath}');
+      unawaited(_metadataReader.logPlaybackError(song.relativePath));
+    });
+    try {
+      await _player.setAudioSource(
+        just_audio.AudioSource.uri(Uri.parse(song.uri)),
+      );
+    } finally {
+      slowLoadTimer.cancel();
+    }
 
     // Some source changes preserve the player's playing state and therefore
     // do not emit another `true` event on playingStream.
@@ -500,10 +508,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
     _metadataRequestedForGeneration = generation;
     unawaited(_loadCurrentMetadata(song, generation));
+    unawaited(_loadCurrentLyrics(song, generation));
   }
 
   Future<void> _loadCurrentMetadata(Song song, int generation) async {
-    final metadata = await _metadataReader.read(song);
+    final loadedMetadata = await _metadataReader.read(song);
 
     // Ignore stale results when the user changes tracks while extraction is
     // running. The generation check also handles duplicate queue URIs.
@@ -511,12 +520,46 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
+    // Lyrics may have completed first, so preserve them when the independent
+    // metadata request catches up.
+    final metadata = SongMetadata(
+      title: loadedMetadata.title,
+      artist: loadedMetadata.artist,
+      album: loadedMetadata.album,
+      albumArtist: loadedMetadata.albumArtist,
+      trackNumber: loadedMetadata.trackNumber,
+      year: loadedMetadata.year,
+      artwork: loadedMetadata.artwork,
+      lyrics: _currentMetadata?.lyrics,
+    );
     _currentMetadata = metadata;
     _metadataController.add(metadata);
 
     // PlaybackScreen already listens to currentMetadataStream, so its title,
     // artist, album, artwork, and lyrics populate as soon as this is emitted.
     _publishCurrentMediaItem(duration: _player.duration, metadata: metadata);
+  }
+
+  Future<void> _loadCurrentLyrics(Song song, int generation) async {
+    final lyrics = await _metadataReader.readLyrics(song);
+
+    if (generation != _trackLoadGeneration || currentSong?.uri != song.uri) {
+      return;
+    }
+
+    final current = _currentMetadata ?? const SongMetadata();
+    final metadata = SongMetadata(
+      title: current.title,
+      artist: current.artist,
+      album: current.album,
+      albumArtist: current.albumArtist,
+      trackNumber: current.trackNumber,
+      year: current.year,
+      artwork: current.artwork,
+      lyrics: lyrics,
+    );
+    _currentMetadata = metadata;
+    _metadataController.add(metadata);
   }
 
   void _publishCurrentMediaItem({Duration? duration, SongMetadata? metadata}) {

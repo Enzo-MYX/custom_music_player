@@ -43,6 +43,11 @@ void main() {
           commands: [LibraryCommand(include: true, path: 'Music')],
         ),
       ],
+      ignoreLibrary: MusicLibrary(
+        name: 'Ignored files',
+        buildMode: LibraryBuildMode.includeNone,
+        commands: [LibraryCommand(include: true, path: 'Podcasts')],
+      ),
     );
 
     final json = original.toJson();
@@ -54,6 +59,17 @@ void main() {
     expect(restored.libraries[0].name, 'Test');
     expect(restored.libraries[0].buildMode, LibraryBuildMode.includeNone);
     expect(restored.libraries[0].commands.length, 1);
+    expect(restored.ignoreLibrary.commands.single.path, 'Podcasts');
+  });
+
+  test('older AppSettings default to an empty ignore library', () {
+    final restored = AppSettings.fromJson({
+      'rootUri': 'content://example/root',
+      'libraries': <dynamic>[],
+    });
+
+    expect(restored.ignoreLibrary.buildMode, LibraryBuildMode.includeNone);
+    expect(restored.ignoreLibrary.commands, isEmpty);
   });
 
   test('Song preserves a sidecar lyrics URI in the lightweight cache', () {
