@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 
 import '../models/song.dart';
@@ -15,10 +13,7 @@ class MetadataReader {
     try {
       final result = await _channel.invokeMapMethod<String, dynamic>(
         'readMetadata',
-        {
-          'uri': song.uri,
-          if (song.lyricsUri != null) 'lyricsUri': song.lyricsUri,
-        },
+        {'uri': song.uri},
       );
 
       if (result == null) {
@@ -33,13 +28,38 @@ class MetadataReader {
         trackNumber: _clean(result['trackNumber']),
         year: _clean(result['year']),
         artwork: result['artwork'] as Uint8List?,
-        lyrics: chooseLyrics(
-          sidecar: _clean(result['sidecarLyrics']),
-          embedded: _clean(result['embeddedLyrics']),
-        ),
       );
     } on PlatformException {
       return const SongMetadata();
+    }
+  }
+
+  Future<SongLyrics?> readLyrics(Song song) async {
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'readLyrics',
+        {
+          'uri': song.uri,
+          if (song.lyricsUri != null) 'lyricsUri': song.lyricsUri,
+        },
+      );
+
+      return chooseLyrics(
+        sidecar: _clean(result?['sidecarLyrics']),
+        embedded: _clean(result?['embeddedLyrics']),
+      );
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<void> logPlaybackError(String relativePath) async {
+    try {
+      await _channel.invokeMethod<void>('logPlaybackError', {
+        'path': relativePath,
+      });
+    } on Object {
+      // Logging must never become another playback failure.
     }
   }
 

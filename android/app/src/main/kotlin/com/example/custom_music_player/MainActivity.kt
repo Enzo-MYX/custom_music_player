@@ -2,18 +2,24 @@ package com.example.custom_music_player
 
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.Charset
+import java.util.concurrent.Executors
 
 class MainActivity : AudioServiceActivity() {
     private val metadataChannel =
         "com.example.custom_music_player/metadata"
+    private val metadataExecutor = Executors.newCachedThreadPool()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(
         flutterEngine: FlutterEngine
@@ -24,7 +30,30 @@ class MainActivity : AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             metadataChannel
         ).setMethodCallHandler { call, result ->
-            if (call.method != "readMetadata") {
+            if (call.method == "logPlaybackError") {
+                val path = call.argument<String>("path")
+                if (path == null) {
+                    result.error("missing_path", "No song path was supplied.", null)
+                    return@setMethodCallHandler
+                }
+                metadataExecutor.execute {
+                    try {
+                        val logFile = File(filesDir, "playback_errors.log")
+                        logFile.appendText(
+                            "${System.currentTimeMillis()}\t$path\n",
+                            Charsets.UTF_8
+                        )
+                        mainHandler.post { result.success(null) }
+                    } catch (error: Exception) {
+                        mainHandler.post {
+                            result.error("log_error", error.message, null)
+                        }
+                    }
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method != "readMetadata" && call.method != "readLyrics") {
                 result.notImplemented()
                 return@setMethodCallHandler
             }
@@ -41,52 +70,66 @@ class MainActivity : AudioServiceActivity() {
                 return@setMethodCallHandler
             }
 
-            val retriever = MediaMetadataRetriever()
-
-            try {
-                retriever.setDataSource(
-                    applicationContext,
-                    Uri.parse(uriString)
-                )
-
-                result.success(
-                    mapOf<String, Any?>(
-                        "title" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_TITLE
-                        ),
-                        "artist" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_ARTIST
-                        ),
-                        "album" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_ALBUM
-                        ),
-                        "albumArtist" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST
-                        ),
-                        "trackNumber" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER
-                        ),
-                        "year" to retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_YEAR
-                        ),
-                        "artwork" to retriever.embeddedPicture,
-                        "embeddedLyrics" to readEmbeddedLyrics(
-                            Uri.parse(uriString)
-                        ),
-                        "sidecarLyrics" to lyricsUriString?.let {
-                            readText(Uri.parse(it))
-                        }
-                    )
-                )
-            } catch (error: Exception) {
-                result.error(
-                    "metadata_error",
-                    error.message,
-                    null
-                )
-            } finally {
-                retriever.release()
+            metadataExecutor.execute {
+                try {
+                    val values = if (call.method == "readLyrics") {
+                        mapOf<String, Any?>(
+                            "embeddedLyrics" to readEmbeddedLyrics(
+                                Uri.parse(uriString)
+                            ),
+                            "sidecarLyrics" to lyricsUriString?.let {
+                                readText(Uri.parse(it))
+                            }
+                        )
+                    } else {
+                        readAudioMetadata(Uri.parse(uriString))
+                    }
+                    mainHandler.post { result.success(values) }
+                } catch (error: Exception) {
+                    mainHandler.post {
+                        result.error(
+                            "metadata_error",
+                            error.message,
+                            null
+                        )
+                    }
+                }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        metadataExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    private fun readAudioMetadata(uri: Uri): Map<String, Any?> {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(applicationContext, uri)
+            mapOf(
+                "title" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_TITLE
+                ),
+                "artist" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_ARTIST
+                ),
+                "album" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_ALBUM
+                ),
+                "albumArtist" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST
+                ),
+                "trackNumber" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER
+                ),
+                "year" to retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_YEAR
+                ),
+                "artwork" to retriever.embeddedPicture
+            )
+        } finally {
+            retriever.release()
         }
     }
 
