@@ -493,16 +493,47 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // starting playback do not depend on metadata or embedded artwork.
     _publishCurrentMediaItem();
 
-    final slowLoadTimer = Timer(const Duration(seconds: 10), () {
+    final load = _player
+        .setAudioSource(just_audio.AudioSource.uri(Uri.parse(song.uri)))
+        .then((_) => true);
+    final loadedBeforeTimeout = await Future.any<bool>([
+      load,
+      Future<bool>.delayed(const Duration(seconds: 10), () => false),
+    ]);
+
+    if (!loadedBeforeTimeout) {
       debugPrint('[audio] load exceeded 10 seconds: ${song.relativePath}');
-      unawaited(_metadataReader.logPlaybackError(song.relativePath));
-    });
-    try {
-      await _player.setAudioSource(
-        just_audio.AudioSource.uri(Uri.parse(song.uri)),
-      );
-    } finally {
-      slowLoadTimer.cancel();
+      await _metadataReader.logPlaybackError(song.relativePath);
+
+      // Starting another source interrupts the timed-out setAudioSource call.
+      // Future.any remains subscribed to it, so that expected late interruption
+      // cannot surface as an unhandled asynchronous error.
+      if (generation != _trackLoadGeneration) {
+        return;
+      }
+
+      if (canGoNext) {
+        if (_shuffleEnabled) {
+          _currentIndex = _shuffleOrder.moveNext();
+        } else {
+          _currentIndex = _currentIndex! + 1;
+        }
+
+        _requestResumeCheckpoint();
+        await _loadCurrentSong();
+      } else {
+        // There is nowhere to skip to. Clear the unusable current item so a
+        // queue-start caller cannot accidentally try to play it afterward.
+        ++_trackLoadGeneration;
+        _currentIndex = null;
+        _currentMetadata = null;
+        _metadataController.add(null);
+        mediaItem.add(null);
+        await _player.stop();
+        playbackState.add(_toPlaybackState(_player.playbackEvent));
+        _requestResumeCheckpoint();
+      }
+      return;
     }
 
     // Some source changes preserve the player's playing state and therefore
