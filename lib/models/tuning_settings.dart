@@ -1,5 +1,6 @@
 class TuningSettings {
   static const defaults = TuningSettings(
+    nightMode: false,
     loadTimeoutSeconds: 10,
     seekSeconds: 5,
     defaultPlaybackSpeed: 1.0,
@@ -8,6 +9,7 @@ class TuningSettings {
     carouselMinFlingVelocity: 50,
   );
 
+  final bool nightMode;
   final int loadTimeoutSeconds;
   final int seekSeconds;
   final double defaultPlaybackSpeed;
@@ -16,6 +18,7 @@ class TuningSettings {
   final double carouselMinFlingVelocity;
 
   const TuningSettings({
+    required this.nightMode,
     required this.loadTimeoutSeconds,
     required this.seekSeconds,
     required this.defaultPlaybackSpeed,
@@ -25,6 +28,7 @@ class TuningSettings {
   });
 
   Map<String, dynamic> toJson() => {
+    'nightMode': nightMode,
     'loadTimeoutSeconds': loadTimeoutSeconds,
     'seekSeconds': seekSeconds,
     'defaultPlaybackSpeed': defaultPlaybackSpeed,
@@ -64,6 +68,9 @@ class TuningSettings {
         : speeds;
 
     return TuningSettings(
+      nightMode: json['nightMode'] is bool
+          ? json['nightMode'] as bool
+          : defaults.nightMode,
       loadTimeoutSeconds: validInt(
         'loadTimeoutSeconds',
         defaults.loadTimeoutSeconds,

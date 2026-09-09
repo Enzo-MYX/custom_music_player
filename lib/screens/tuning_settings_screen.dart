@@ -20,6 +20,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
   late final TextEditingController _speedPresets;
   late final TextEditingController _flingDistance;
   late final TextEditingController _flingVelocity;
+  late bool _nightMode;
   bool _saving = false;
 
   @override
@@ -32,6 +33,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
   }
 
   void _setControllerValues(TuningSettings settings, {bool create = false}) {
+    _nightMode = settings.nightMode;
     final values = [
       settings.loadTimeoutSeconds.toString(),
       settings.seekSeconds.toString(),
@@ -102,6 +104,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     setState(() => _saving = true);
     await widget.playbackController.updateTuningSettings(
       TuningSettings(
+        nightMode: _nightMode,
         loadTimeoutSeconds: int.parse(_loadTimeout.text.trim()),
         seekSeconds: int.parse(_seekSeconds.text.trim()),
         defaultPlaybackSpeed: defaultSpeed,
@@ -143,6 +146,34 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 160),
             children: [
+              Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Night mode'),
+                subtitle: const Text('Use a mostly dark color scheme.'),
+                secondary: const Icon(Icons.dark_mode_outlined),
+                value: _nightMode,
+                onChanged: _saving
+                    ? null
+                    : (value) async {
+                        setState(() => _nightMode = value);
+                        final current = widget.playbackController.tuningSettings;
+                        await widget.playbackController.updateTuningSettings(
+                          TuningSettings(
+                            nightMode: value,
+                            loadTimeoutSeconds: current.loadTimeoutSeconds,
+                            seekSeconds: current.seekSeconds,
+                            defaultPlaybackSpeed: current.defaultPlaybackSpeed,
+                            playbackSpeeds: current.playbackSpeeds,
+                            carouselMinFlingDistance:
+                                current.carouselMinFlingDistance,
+                            carouselMinFlingVelocity:
+                                current.carouselMinFlingVelocity,
+                          ),
+                        );
+                      },
+              ),
+              const SizedBox(height: 24),
               Text('Playback', style: Theme.of(context).textTheme.titleLarge),
               _field(
                 controller: _loadTimeout,

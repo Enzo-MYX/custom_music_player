@@ -75,6 +75,7 @@ void main() {
 
   test('TuningSettings survives JSON serialization', () {
     const original = TuningSettings(
+      nightMode: true,
       loadTimeoutSeconds: 20,
       seekSeconds: 8,
       defaultPlaybackSpeed: 1.25,
@@ -85,6 +86,7 @@ void main() {
 
     final restored = TuningSettings.fromJson(original.toJson());
 
+    expect(restored.nightMode, isTrue);
     expect(restored.loadTimeoutSeconds, 20);
     expect(restored.seekSeconds, 8);
     expect(restored.defaultPlaybackSpeed, 1.25);
@@ -95,6 +97,7 @@ void main() {
 
   test('TuningSettings repairs invalid persisted values', () {
     final restored = TuningSettings.fromJson({
+      'nightMode': 'invalid',
       'loadTimeoutSeconds': 0,
       'seekSeconds': -1,
       'defaultPlaybackSpeed': 9,
@@ -103,6 +106,7 @@ void main() {
       'carouselMinFlingVelocity': -3,
     });
 
+    expect(restored.nightMode, isFalse);
     expect(restored.loadTimeoutSeconds, 10);
     expect(restored.seekSeconds, 5);
     expect(restored.defaultPlaybackSpeed, 1);

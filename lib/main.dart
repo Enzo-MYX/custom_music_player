@@ -85,16 +85,31 @@ class _MusicPlayerAppState extends State<MusicPlayerApp>
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Driftwave',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: HomeCarouselScreen(
-        manager: _manager,
-        playbackController: widget.playbackController,
-      ),
+    return StreamBuilder(
+      stream: widget.playbackController.tuningSettingsStream,
+      initialData: widget.playbackController.tuningSettings,
+      builder: (context, snapshot) {
+        final nightMode = snapshot.data?.nightMode ?? false;
+        return MaterialApp(
+          title: 'Driftwave',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.deepPurple,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          themeMode: nightMode ? ThemeMode.dark : ThemeMode.light,
+          home: HomeCarouselScreen(
+            manager: _manager,
+            playbackController: widget.playbackController,
+          ),
+        );
+      },
     );
   }
 }
