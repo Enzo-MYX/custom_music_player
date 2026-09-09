@@ -86,7 +86,7 @@ class _MusicPlayerAppState extends State<MusicPlayerApp>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Custom Music Player',
+      title: 'Driftwave',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,

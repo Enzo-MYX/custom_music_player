@@ -57,6 +57,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   String? _error;
   bool _miniPlayerCollapsed = false;
   Offset? _collapsedMiniPlayerPosition;
+  int _miniPlayerRestoreRequest = 0;
 
   @override
   void initState() {
@@ -70,8 +71,6 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   Future<void> _load() async {
     try {
       await widget.manager.load();
-      final miniPlayerCollapsed =
-          await widget.manager.loadMiniPlayerCollapsed();
 
       if (!mounted) {
         return;
@@ -80,7 +79,6 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
       setState(() {
         _loading = false;
         _error = null;
-        _miniPlayerCollapsed = miniPlayerCollapsed;
       });
     } catch (error) {
       if (!mounted) {
@@ -99,9 +97,44 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   }
 
   void _handlePageChanged(int page) {
+    final previousLogicalPage = _logicalPage;
+    final logicalPage = _logicalIndex(page);
+
     setState(() {
       _physicalPage = page;
-      _logicalPage = _logicalIndex(page);
+      _logicalPage = logicalPage;
+
+      if (previousLogicalPage == 1 && logicalPage != 1) {
+        // Leaving shuffle only collapses the player for the other carousel
+        // pages; it must not replace the user's persisted preference.
+        _miniPlayerCollapsed = true;
+      }
+    });
+
+    if (logicalPage == 1 && previousLogicalPage != 1) {
+      unawaited(_restoreMiniPlayerCollapsed());
+    }
+  }
+
+  Future<void> _restoreMiniPlayerCollapsed() async {
+    // An already expanded player stays expanded when shuffle is entered. This
+    // also lets an expansion made on another carousel page win over storage.
+    if (!_miniPlayerCollapsed) {
+      return;
+    }
+
+    final request = ++_miniPlayerRestoreRequest;
+    final collapsed = await widget.manager.loadMiniPlayerCollapsed();
+
+    if (!mounted ||
+        request != _miniPlayerRestoreRequest ||
+        _logicalPage != 1 ||
+        !_miniPlayerCollapsed) {
+      return;
+    }
+
+    setState(() {
+      _miniPlayerCollapsed = collapsed;
     });
   }
 
@@ -226,6 +259,9 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   }
 
   void _setMiniPlayerCollapsed(bool collapsed) {
+    // Prevent an in-flight restore from overwriting a newer user choice.
+    _miniPlayerRestoreRequest++;
+
     setState(() {
       _miniPlayerCollapsed = collapsed;
     });

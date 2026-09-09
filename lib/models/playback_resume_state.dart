@@ -3,7 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'song.dart';
 
 class PlaybackResumeState {
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
 
   final List<Song> songs;
   final int currentIndex;
@@ -12,7 +12,8 @@ class PlaybackResumeState {
   final int shufflePosition;
   final int positionMilliseconds;
   final double speed;
-  final AudioServiceRepeatMode repeatMode;
+  final AudioServiceRepeatMode normalRepeatMode;
+  final AudioServiceRepeatMode shuffleRepeatMode;
 
   const PlaybackResumeState({
     required this.songs,
@@ -22,7 +23,8 @@ class PlaybackResumeState {
     required this.shufflePosition,
     required this.positionMilliseconds,
     required this.speed,
-    required this.repeatMode,
+    required this.normalRepeatMode,
+    required this.shuffleRepeatMode,
   });
 
   Duration get position => Duration(milliseconds: positionMilliseconds);
@@ -36,11 +38,13 @@ class PlaybackResumeState {
     'shufflePosition': shufflePosition,
     'positionMilliseconds': positionMilliseconds,
     'speed': speed,
-    'repeatMode': repeatMode.name,
+    'normalRepeatMode': normalRepeatMode.name,
+    'shuffleRepeatMode': shuffleRepeatMode.name,
   };
 
   factory PlaybackResumeState.fromJson(Map<String, dynamic> json) {
-    if (json['version'] != currentVersion) {
+    final version = json['version'];
+    if (version != 1 && version != currentVersion) {
       throw const FormatException('Unsupported resume-state version');
     }
 
@@ -50,11 +54,21 @@ class PlaybackResumeState {
       throw const FormatException('Invalid resume-state lists');
     }
 
-    final repeatName = json['repeatMode'] as String?;
-    final repeatMode = AudioServiceRepeatMode.values.firstWhere(
-      (mode) => mode.name == repeatName,
-      orElse: () => AudioServiceRepeatMode.none,
-    );
+    AudioServiceRepeatMode parseRepeatMode(Object? name) =>
+        AudioServiceRepeatMode.values.firstWhere(
+          (mode) => mode.name == name,
+          orElse: () => AudioServiceRepeatMode.none,
+        );
+
+    // Version 1 stored only the active mode. Preserve that choice for both
+    // queue types when migrating so an upgrade never changes user behavior.
+    final legacyRepeatMode = parseRepeatMode(json['repeatMode']);
+    final normalRepeatMode = version == 1
+        ? legacyRepeatMode
+        : parseRepeatMode(json['normalRepeatMode']);
+    final shuffleRepeatMode = version == 1
+        ? legacyRepeatMode
+        : parseRepeatMode(json['shuffleRepeatMode']);
 
     return PlaybackResumeState(
       songs: songsJson
@@ -68,7 +82,8 @@ class PlaybackResumeState {
       shufflePosition: json['shufflePosition'] as int,
       positionMilliseconds: json['positionMilliseconds'] as int,
       speed: (json['speed'] as num).toDouble(),
-      repeatMode: repeatMode,
+      normalRepeatMode: normalRepeatMode,
+      shuffleRepeatMode: shuffleRepeatMode,
     );
   }
 

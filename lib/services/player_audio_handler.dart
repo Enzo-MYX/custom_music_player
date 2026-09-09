@@ -32,7 +32,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   List<Song> _songs = const [];
   int? _currentIndex;
-  AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
+  AudioServiceRepeatMode _normalRepeatMode = AudioServiceRepeatMode.none;
+  AudioServiceRepeatMode _shuffleRepeatMode = AudioServiceRepeatMode.none;
   bool _shuffleEnabled = false;
 
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -83,7 +84,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return _songs[index];
   }
 
-  AudioServiceRepeatMode get repeatMode => _repeatMode;
+  AudioServiceRepeatMode get repeatMode => _shuffleEnabled
+      ? _shuffleRepeatMode
+      : _normalRepeatMode;
 
   PlaybackResumeState? get resumeState {
     final index = _currentIndex;
@@ -96,7 +99,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       shufflePosition: _shuffleOrder.position,
       positionMilliseconds: _player.position.inMilliseconds,
       speed: _player.speed,
-      repeatMode: _repeatMode,
+      normalRepeatMode: _normalRepeatMode,
+      shuffleRepeatMode: _shuffleRepeatMode,
     );
   }
 
@@ -159,7 +163,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         return;
       }
 
-      if (_repeatMode == AudioServiceRepeatMode.one) {
+      if (repeatMode == AudioServiceRepeatMode.one) {
         await _player.seek(Duration.zero);
         _requestResumeCheckpoint();
         unawaited(_player.play());
@@ -171,7 +175,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         return;
       }
 
-      if (_repeatMode == AudioServiceRepeatMode.all && _songs.isNotEmpty) {
+      if (repeatMode == AudioServiceRepeatMode.all && _songs.isNotEmpty) {
         if (_shuffleEnabled) {
           final previousIndex = _currentIndex;
 
@@ -256,7 +260,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _songs = List<Song>.of(state.songs);
       _shuffleEnabled = state.shuffleEnabled;
       _currentIndex = state.currentIndex;
-      _repeatMode = state.repeatMode;
+      _normalRepeatMode = state.normalRepeatMode;
+      _shuffleRepeatMode = state.shuffleRepeatMode;
       if (_shuffleEnabled) {
         _shuffleOrder.restore(state.shuffleOrder, state.shufflePosition);
       } else {
@@ -307,7 +312,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
-    _repeatMode = repeatMode;
+    if (_shuffleEnabled) {
+      _shuffleRepeatMode = repeatMode;
+    } else {
+      _normalRepeatMode = repeatMode;
+    }
 
     playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
     _requestResumeCheckpoint();
@@ -606,30 +615,22 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       action: MediaAction.playPause,
     );
 
-    // Keep a stable five-slot layout. A transparent icon retains the outer
-    // previous/next slot when that action is unavailable, leaving play/pause
-    // geometrically centred in both the expanded and compact notification.
-    final previousControl = MediaControl(
-      androidIcon: canGoPrevious
-          ? 'drawable/audio_service_skip_previous'
-          : 'drawable/audio_service_empty',
-      label: 'Previous',
-      action: MediaAction.skipToPrevious,
-    );
-    final nextControl = MediaControl(
-      androidIcon: canGoNext
-          ? 'drawable/audio_service_skip_next'
-          : 'drawable/audio_service_empty',
-      label: 'Next',
-      action: MediaAction.skipToNext,
-    );
-
+    // Keep the notification to three symmetric transport actions. Android
+    // lays these out as one centred group, with play/pause in the middle.
+    // Dedicated icons also make the five-second interval explicit instead of
+    // presenting Android's generic rewind/fast-forward glyphs.
     final controls = <MediaControl>[
-      previousControl,
-      MediaControl.rewind,
+      const MediaControl(
+        androidIcon: 'drawable/audio_service_replay_5',
+        label: 'Back 5 seconds',
+        action: MediaAction.rewind,
+      ),
       playPauseControl,
-      MediaControl.fastForward,
-      nextControl,
+      const MediaControl(
+        androidIcon: 'drawable/audio_service_forward_5',
+        label: 'Forward 5 seconds',
+        action: MediaAction.fastForward,
+      ),
     ];
 
     return PlaybackState(
@@ -638,9 +639,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       // Enables dragging the Android notification and lock-screen progress bar.
       systemActions: const {MediaAction.seek},
 
-      // Android permits three compact actions. Rewind/play/forward keeps the
-      // primary action centred; expanding reveals previous and next as well.
-      androidCompactActionIndices: const [1, 2, 3],
+      // All three actions remain visible in the compact notification.
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: switch (_player.processingState) {
         just_audio.ProcessingState.idle => AudioProcessingState.idle,
         just_audio.ProcessingState.loading => AudioProcessingState.loading,
@@ -656,7 +656,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       speed: _player.speed,
 
       queueIndex: queuePosition,
-      repeatMode: _repeatMode,
+      repeatMode: repeatMode,
       shuffleMode: _shuffleEnabled
           ? AudioServiceShuffleMode.all
           : AudioServiceShuffleMode.none,

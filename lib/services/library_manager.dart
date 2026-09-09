@@ -10,6 +10,7 @@ import '../models/library_state.dart';
 import '../models/music_library.dart';
 import '../models/song.dart';
 import 'library_scanner.dart';
+import 'command_matcher.dart';
 import 'settings_storage.dart';
 
 class LibraryManager {
@@ -27,6 +28,14 @@ class LibraryManager {
       _saf = saf ?? Saf();
 
   LibraryState get state => _state;
+
+  bool isIgnoredPath(String relativePath) {
+    final ignoreLibrary = _state.settings.ignoreLibrary;
+    return LibraryCommandMatcher(
+      buildMode: ignoreLibrary.buildMode,
+      commands: ignoreLibrary.commands,
+    ).shouldInclude(relativePath);
+  }
 
   Future<bool> loadFolderBrowserRecursive() {
     return _storage.loadFolderBrowserRecursive();
@@ -399,7 +408,11 @@ class LibraryManager {
     );
 
     try {
-      final songs = await _scanner.rebuild(root, temporaryLibrary);
+      final songs = await _scanner.rebuild(
+        root,
+        temporaryLibrary,
+        ignoreLibrary: _state.settings.ignoreLibrary,
+      );
 
       _state = LibraryState(
         settings: _state.settings,

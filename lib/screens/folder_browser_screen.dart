@@ -102,7 +102,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
         throw StateError('No valid root directory is selected.');
       }
 
-      final entries = await _listVisibleEntries(root);
+      final entries = await _listVisibleEntries(root, '');
 
       if (!mounted) {
         return;
@@ -130,11 +130,16 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
 
   Future<List<SafDocumentFile>> _listVisibleEntries(
     SafDocumentFile directory,
+    String relativeDirectory,
   ) async {
     final entries = await _saf.list(directory.uri);
 
     final visibleEntries = entries.where((entry) {
-      return entry.isDir || !_isLyricsFile(entry.name);
+      final relativePath = relativeDirectory.isEmpty
+          ? entry.name
+          : '$relativeDirectory/${entry.name}';
+      return !widget.manager.isIgnoredPath(relativePath) &&
+          (entry.isDir || !_isLyricsFile(entry.name));
     }).toList();
 
     visibleEntries.sort(_compareBrowserEntries);
@@ -178,7 +183,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     });
 
     try {
-      final entries = await _listVisibleEntries(directory);
+      final entries = await _listVisibleEntries(directory, relativePath);
 
       if (!mounted) {
         return;
@@ -393,6 +398,10 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       final relativePath = relativeDirectory.isEmpty
           ? entry.name
           : '$relativeDirectory/${entry.name}';
+
+      if (widget.manager.isIgnoredPath(relativePath)) {
+        continue;
+      }
 
       if (entry.isDir) {
         if (_matchesAnySearchKey(entry.name, keys)) {
@@ -724,6 +733,10 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       final relativePath = relativeDirectory.isEmpty
           ? entry.name
           : '$relativeDirectory/${entry.name}';
+
+      if (widget.manager.isIgnoredPath(relativePath)) {
+        continue;
+      }
 
       songs.add(
         Song(

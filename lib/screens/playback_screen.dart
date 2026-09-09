@@ -168,12 +168,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: artwork == null
-              ? Center(
-                  child: Icon(
-                    Icons.album,
-                    size: 96,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+              ? Image.asset(
+                  'assets/images/driftwave_default_cover.gif',
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
                 )
               : Image.memory(
                   artwork,
