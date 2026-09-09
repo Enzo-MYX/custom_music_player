@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 
 import '../services/library_manager.dart';
 import '../services/playback_controller.dart';
@@ -10,20 +9,32 @@ import 'folder_browser_screen.dart';
 import 'library_manager_screen.dart';
 import 'playback_screen.dart';
 import 'shuffle_screen.dart';
+import 'tuning_settings_screen.dart';
 
 class SensitivePageScrollPhysics extends PageScrollPhysics {
-  const SensitivePageScrollPhysics({super.parent});
+  const SensitivePageScrollPhysics({
+    required this.flingDistance,
+    required this.flingVelocity,
+    super.parent,
+  });
+
+  final double flingDistance;
+  final double flingVelocity;
 
   @override
   SensitivePageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return SensitivePageScrollPhysics(parent: buildParent(ancestor));
+    return SensitivePageScrollPhysics(
+      flingDistance: flingDistance,
+      flingVelocity: flingVelocity,
+      parent: buildParent(ancestor),
+    );
   }
 
   @override
-  double get minFlingDistance => 4;
+  double get minFlingDistance => flingDistance;
 
   @override
-  double get minFlingVelocity => 50;
+  double get minFlingVelocity => flingVelocity;
 
   @override
   SpringDescription get spring =>
@@ -45,7 +56,7 @@ class HomeCarouselScreen extends StatefulWidget {
 }
 
 class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
-  static const int _pageCount = 3;
+  static const int _pageCount = 4;
   static const int _initialPage = 3001;
 
   late final PageController _pageController;
@@ -169,14 +180,18 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
         loadOnOpen: false,
         onOpenLibraryManager: _showLibraryManager,
       ),
-      _ => FolderBrowserScreen(
+      2 => FolderBrowserScreen(
         // Including the root URI recreates the browser after the configured
         // global root changes.
         key: ValueKey(
           'folder-$physicalIndex-'
-              '${widget.manager.state.settings.rootUri}',
+          '${widget.manager.state.settings.rootUri}',
         ),
         manager: widget.manager,
+        playbackController: widget.playbackController,
+      ),
+      _ => TuningSettingsScreen(
+        key: ValueKey('settings-$physicalIndex'),
         playbackController: widget.playbackController,
       ),
     };
@@ -432,12 +447,20 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
 
           return Stack(
             children: [
-              PageView.builder(
-                controller: _pageController,
-                physics: const SensitivePageScrollPhysics(),
-                onPageChanged: _handlePageChanged,
-                itemBuilder: (context, index) {
-                  return _buildCubePage(index);
+              StreamBuilder(
+                stream: widget.playbackController.tuningSettingsStream,
+                initialData: widget.playbackController.tuningSettings,
+                builder: (context, snapshot) {
+                  final settings = snapshot.data!;
+                  return PageView.builder(
+                    controller: _pageController,
+                    physics: SensitivePageScrollPhysics(
+                      flingDistance: settings.carouselMinFlingDistance,
+                      flingVelocity: settings.carouselMinFlingVelocity,
+                    ),
+                    onPageChanged: _handlePageChanged,
+                    itemBuilder: (context, index) => _buildCubePage(index),
+                  );
                 },
               ),
 

@@ -5,6 +5,7 @@ import 'package:custom_music_player/models/build_mode.dart';
 import 'package:custom_music_player/models/library_command.dart';
 import 'package:custom_music_player/models/music_library.dart';
 import 'package:custom_music_player/models/song.dart';
+import 'package:custom_music_player/models/tuning_settings.dart';
 
 void main() {
   test('MusicLibrary survives JSON serialization', () {
@@ -70,6 +71,44 @@ void main() {
 
     expect(restored.ignoreLibrary.buildMode, LibraryBuildMode.includeNone);
     expect(restored.ignoreLibrary.commands, isEmpty);
+  });
+
+  test('TuningSettings survives JSON serialization', () {
+    const original = TuningSettings(
+      loadTimeoutSeconds: 20,
+      seekSeconds: 8,
+      defaultPlaybackSpeed: 1.25,
+      playbackSpeeds: [0.75, 1, 1.25, 1.5],
+      carouselMinFlingDistance: 12,
+      carouselMinFlingVelocity: 120,
+    );
+
+    final restored = TuningSettings.fromJson(original.toJson());
+
+    expect(restored.loadTimeoutSeconds, 20);
+    expect(restored.seekSeconds, 8);
+    expect(restored.defaultPlaybackSpeed, 1.25);
+    expect(restored.playbackSpeeds, [0.75, 1, 1.25, 1.5]);
+    expect(restored.carouselMinFlingDistance, 12);
+    expect(restored.carouselMinFlingVelocity, 120);
+  });
+
+  test('TuningSettings repairs invalid persisted values', () {
+    final restored = TuningSettings.fromJson({
+      'loadTimeoutSeconds': 0,
+      'seekSeconds': -1,
+      'defaultPlaybackSpeed': 9,
+      'playbackSpeeds': [0, 1, 8],
+      'carouselMinFlingDistance': -2,
+      'carouselMinFlingVelocity': -3,
+    });
+
+    expect(restored.loadTimeoutSeconds, 10);
+    expect(restored.seekSeconds, 5);
+    expect(restored.defaultPlaybackSpeed, 1);
+    expect(restored.playbackSpeeds, [1]);
+    expect(restored.carouselMinFlingDistance, 4);
+    expect(restored.carouselMinFlingVelocity, 50);
   });
 
   test('Song preserves a sidecar lyrics URI in the lightweight cache', () {

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_settings.dart';
 import '../models/built_library_cache.dart';
 import '../models/playback_resume_state.dart';
+import '../models/tuning_settings.dart';
 import 'settings_repository.dart';
 
 class SettingsStorage implements SettingsRepository {
@@ -13,6 +14,7 @@ class SettingsStorage implements SettingsRepository {
   static const String _folderBrowserRecursiveKey = 'folder_browser_recursive';
   static const String _miniPlayerCollapsedKey = 'mini_player_collapsed';
   static const String _playbackResumeStateKey = 'playback_resume_state';
+  static const String _tuningSettingsKey = 'tuning_settings';
 
   final SharedPreferencesAsync _preferences;
 
@@ -113,5 +115,25 @@ class SettingsStorage implements SettingsRepository {
 
   Future<void> clearPlaybackResumeState() async {
     await _preferences.remove(_playbackResumeStateKey);
+  }
+
+  Future<TuningSettings> loadTuningSettings() async {
+    final jsonString = await _preferences.getString(_tuningSettingsKey);
+    if (jsonString == null) return TuningSettings.defaults;
+    try {
+      final json = jsonDecode(jsonString);
+      return json is Map<String, dynamic>
+          ? TuningSettings.fromJson(json)
+          : TuningSettings.defaults;
+    } catch (_) {
+      return TuningSettings.defaults;
+    }
+  }
+
+  Future<void> saveTuningSettings(TuningSettings settings) async {
+    await _preferences.setString(
+      _tuningSettingsKey,
+      jsonEncode(settings.toJson()),
+    );
   }
 }

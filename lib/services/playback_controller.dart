@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 
 import '../models/song.dart';
 import '../models/song_metadata.dart';
+import '../models/tuning_settings.dart';
 import 'player_audio_handler.dart';
 import 'settings_storage.dart';
 
@@ -14,6 +15,9 @@ class PlaybackController {
   String? _lastSavedState;
   Future<void> _saveChain = Future<void>.value();
   late final StreamSubscription<void> _checkpointSubscription;
+  final StreamController<TuningSettings> _tuningSettingsController =
+      StreamController<TuningSettings>.broadcast();
+  TuningSettings _tuningSettings = TuningSettings.defaults;
 
   PlaybackController(this._handler, {SettingsStorage? storage})
     : _storage = storage ?? SettingsStorage() {
@@ -23,6 +27,8 @@ class PlaybackController {
   }
 
   Future<void> initialize() async {
+    _tuningSettings = await _storage.loadTuningSettings();
+    _handler.applyTuningSettings(_tuningSettings);
     final state = await _storage.loadPlaybackResumeState();
     if (state == null) return;
     if (!await _handler.restore(state)) {
@@ -64,6 +70,18 @@ class PlaybackController {
   Duration? get duration => _handler.duration;
 
   double get speed => _handler.speed;
+
+  TuningSettings get tuningSettings => _tuningSettings;
+
+  Stream<TuningSettings> get tuningSettingsStream =>
+      _tuningSettingsController.stream;
+
+  Future<void> updateTuningSettings(TuningSettings settings) async {
+    _tuningSettings = settings;
+    _handler.applyTuningSettings(settings);
+    _tuningSettingsController.add(settings);
+    await _storage.saveTuningSettings(settings);
+  }
 
   bool get playing => _handler.playing;
 
@@ -146,12 +164,12 @@ class PlaybackController {
     return _handler.seek(target);
   }
 
-  Future<void> rewindFiveSeconds() {
-    return seekBy(const Duration(seconds: -5));
+  Future<void> rewindInterval() {
+    return seekBy(Duration(seconds: -_tuningSettings.seekSeconds));
   }
 
-  Future<void> forwardFiveSeconds() {
-    return seekBy(const Duration(seconds: 5));
+  Future<void> forwardInterval() {
+    return seekBy(Duration(seconds: _tuningSettings.seekSeconds));
   }
 
   Future<void> setSpeed(double speed) {
@@ -179,6 +197,7 @@ class PlaybackController {
   Future<void> dispose() {
     return checkpoint().whenComplete(() async {
       await _checkpointSubscription.cancel();
+      await _tuningSettingsController.close();
       await _handler.dispose();
     });
   }

@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart' as just_audio;
 import '../models/song.dart';
 import '../models/song_metadata.dart';
 import '../models/playback_resume_state.dart';
+import '../models/tuning_settings.dart';
 import 'metadata_reader.dart';
 import 'path_utils.dart';
 import 'shuffle_order.dart';
@@ -35,6 +36,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   AudioServiceRepeatMode _normalRepeatMode = AudioServiceRepeatMode.none;
   AudioServiceRepeatMode _shuffleRepeatMode = AudioServiceRepeatMode.none;
   bool _shuffleEnabled = false;
+  TuningSettings _tuningSettings = TuningSettings.defaults;
+
+  void applyTuningSettings(TuningSettings settings) {
+    _tuningSettings = settings;
+    playbackState.add(_toPlaybackState(_player.playbackEvent));
+  }
 
   Stream<Duration?> get durationStream => _player.durationStream;
 
@@ -207,7 +214,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     await _player.stop();
-    await _player.setSpeed(1.0);
+    await _player.setSpeed(_tuningSettings.defaultPlaybackSpeed);
 
     _songs = songs;
     _shuffleEnabled = false;
@@ -293,7 +300,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
 
     await _player.stop();
-    await _player.setSpeed(1.0);
+    await _player.setSpeed(_tuningSettings.defaultPlaybackSpeed);
 
     // Keep the existing built list; only shuffled indices are separate.
     _songs = songs;
@@ -384,19 +391,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _requestResumeCheckpoint();
   }
 
-  /// Moves five seconds backwards without ever changing the current track.
+  /// Moves by the configured seek interval without changing the current track.
   @override
   Future<void> rewind() async {
-    final target = _player.position - const Duration(seconds: 5);
+    final target =
+        _player.position - Duration(seconds: _tuningSettings.seekSeconds);
     await seek(target.isNegative ? Duration.zero : target);
   }
 
-  /// Moves five seconds forwards, continuing at the start of the next track
+  /// Moves by the configured seek interval, continuing at the next track
   /// when the current track is exhausted.
   @override
   Future<void> fastForward() async {
     final duration = _player.duration;
-    final target = _player.position + const Duration(seconds: 5);
+    final target =
+        _player.position + Duration(seconds: _tuningSettings.seekSeconds);
 
     if (duration != null && target >= duration) {
       if (canGoNext) {
@@ -498,11 +507,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         .then((_) => true);
     final loadedBeforeTimeout = await Future.any<bool>([
       load,
-      Future<bool>.delayed(const Duration(seconds: 10), () => false),
+      Future<bool>.delayed(
+        Duration(seconds: _tuningSettings.loadTimeoutSeconds),
+        () => false,
+      ),
     ]);
 
     if (!loadedBeforeTimeout) {
-      debugPrint('[audio] load exceeded 10 seconds: ${song.relativePath}');
+      debugPrint(
+        '[audio] load exceeded ${_tuningSettings.loadTimeoutSeconds} seconds: '
+        '${song.relativePath}',
+      );
       await _metadataReader.logPlaybackError(song.relativePath);
 
       // Starting another source interrupts the timed-out setAudioSource call.
@@ -672,16 +687,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // lays these out as one centred group, with play/pause in the middle.
     // Dedicated icons also make the five-second interval explicit instead of
     // presenting Android's generic rewind/fast-forward glyphs.
+    final seekSeconds = _tuningSettings.seekSeconds;
     final controls = <MediaControl>[
-      const MediaControl(
+      MediaControl(
         androidIcon: 'drawable/audio_service_replay_5',
-        label: 'Back 5 seconds',
+        label: 'Back $seekSeconds seconds',
         action: MediaAction.rewind,
       ),
       playPauseControl,
-      const MediaControl(
+      MediaControl(
         androidIcon: 'drawable/audio_service_forward_5',
-        label: 'Forward 5 seconds',
+        label: 'Forward $seekSeconds seconds',
         action: MediaAction.fastForward,
       ),
     ];

@@ -19,8 +19,6 @@ class PlaybackScreen extends StatefulWidget {
 }
 
 class _PlaybackScreenState extends State<PlaybackScreen> {
-  static const List<double> _playbackSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-
   Future<void> _run(Future<void> action) async {
     await action;
 
@@ -392,12 +390,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   Widget _rewindButton() {
+    final seconds = widget.controller.tuningSettings.seekSeconds;
     return IconButton(
-      tooltip: 'Back 5 seconds',
+      tooltip: 'Back $seconds seconds',
       onPressed: () {
-        _run(widget.controller.rewindFiveSeconds());
+        _run(widget.controller.rewindInterval());
       },
-      icon: const Icon(Icons.replay_5),
+      icon: const Icon(Icons.replay),
     );
   }
 
@@ -413,12 +412,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   Widget _forwardButton() {
+    final seconds = widget.controller.tuningSettings.seekSeconds;
     return IconButton(
-      tooltip: 'Forward 5 seconds',
+      tooltip: 'Forward $seconds seconds',
       onPressed: () {
-        _run(widget.controller.forwardFiveSeconds());
+        _run(widget.controller.forwardInterval());
       },
-      icon: const Icon(Icons.forward_5),
+      icon: const Icon(Icons.forward),
     );
   }
 
@@ -442,7 +442,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         _run(widget.controller.setSpeed(speed));
       },
       itemBuilder: (context) {
-        return _playbackSpeeds.map((speed) {
+        return widget.controller.tuningSettings.playbackSpeeds.map((speed) {
           final selected = speed == currentSpeed;
 
           return PopupMenuItem<double>(
