@@ -84,9 +84,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return _songs[index];
   }
 
-  AudioServiceRepeatMode get repeatMode => _shuffleEnabled
-      ? _shuffleRepeatMode
-      : _normalRepeatMode;
+  AudioServiceRepeatMode get repeatMode =>
+      _shuffleEnabled ? _shuffleRepeatMode : _normalRepeatMode;
 
   PlaybackResumeState? get resumeState {
     final index = _currentIndex;
@@ -216,7 +215,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentIndex = initialIndex;
 
     await _loadCurrentSong();
-    unawaited(_player.play());
+    await _startPlayback();
     _requestResumeCheckpoint();
   }
 
@@ -248,8 +247,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     return true;
   }
 
-  Future<void> startShuffle(List<Song> songs) {
-    return _loadSongs(songs, shuffle: true);
+  Future<void> startShuffle(List<Song> songs) async {
+    await _loadSongs(songs, shuffle: true);
+
+    if (_currentIndex != null) {
+      await _startPlayback();
+    }
   }
 
   Future<bool> restore(PlaybackResumeState state) async {
@@ -318,7 +321,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _normalRepeatMode = repeatMode;
     }
 
-    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+    // Re-sample the player rather than copying the last AudioService state.
+    // Its updatePosition is a timestamped snapshot; republishing an older
+    // snapshot makes AudioService.position briefly jump backwards (and, on
+    // some devices, all the way to zero) when only repeat mode changed.
+    playbackState.add(_toPlaybackState(_player.playbackEvent));
     _requestResumeCheckpoint();
   }
 
@@ -503,6 +510,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_player.playing && generation == _trackLoadGeneration) {
       _startCurrentMetadataIfNeeded();
     }
+  }
+
+  /// Starts playback and returns as soon as the player reports that it has
+  /// started. The Future returned by just_audio's play() normally remains
+  /// pending until playback stops, so it must not be awaited directly.
+  Future<void> _startPlayback() async {
+    if (currentSong == null) {
+      return;
+    }
+
+    final started = _player.playingStream
+        .firstWhere((playing) => playing)
+        .then<void>((_) {});
+    final playbackFinished = _player.play();
+    await Future.any<void>([started, playbackFinished]);
   }
 
   void _startCurrentMetadataIfNeeded() {

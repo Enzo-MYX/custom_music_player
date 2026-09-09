@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/library_manager.dart';
@@ -162,8 +161,6 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
         return;
       }
 
-      unawaited(widget.playbackController.play());
-
       setState(() {
         _starting = false;
         _selectedThroughDropdown = false;
@@ -171,9 +168,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
 
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => PlaybackScreen(
-            controller: widget.playbackController,
-          ),
+          builder: (_) => PlaybackScreen(controller: widget.playbackController),
         ),
       );
     } catch (error) {
@@ -232,8 +227,6 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
       if (!mounted) {
         return;
       }
-
-      unawaited(widget.playbackController.play());
 
       setState(() {
         _starting = false;
