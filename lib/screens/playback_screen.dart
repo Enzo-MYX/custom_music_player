@@ -1,8 +1,10 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/song.dart';
 import '../models/song_metadata.dart';
+import '../models/tuning_settings.dart';
 import '../services/path_utils.dart';
 import '../services/playback_controller.dart';
 import 'playback_queue_screen.dart';
@@ -423,15 +425,135 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   Widget _nextButton() {
-    return IconButton(
-      tooltip: 'Next',
-      onPressed: widget.controller.canGoNext
-          ? () {
-              _run(widget.controller.next());
-            }
-          : null,
-      icon: const Icon(Icons.skip_next),
+    final canGoNext = widget.controller.canGoNext;
+    return Tooltip(
+      message: widget.controller.shuffleEnabled
+          ? 'Next (hold to set length limit)'
+          : 'Next',
+      triggerMode: TooltipTriggerMode.tap,
+      child: GestureDetector(
+        onLongPress: widget.controller.shuffleEnabled
+            ? _showShuffleThresholdDialog
+            : null,
+        child: IconButton(
+          onPressed: canGoNext
+              ? () {
+                  _run(widget.controller.next());
+                }
+              : null,
+          icon: const Icon(Icons.skip_next),
+        ),
+      ),
     );
+  }
+
+  Future<void> _showShuffleThresholdDialog() async {
+    final current = widget.controller.tuningSettings;
+    final controller = TextEditingController(
+      text: current.shuffleSkipThreshold?.toString() ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    var unit = current.shuffleSkipThresholdUnit;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Shuffle track limit'),
+              content: Form(
+                key: formKey,
+                child: SizedBox(
+                  width: 300,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextFormField(
+                        controller: controller,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Longer than',
+                          hintText: 'No limit',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (text) {
+                          final trimmed = text?.trim() ?? '';
+                          if (trimmed.isEmpty) return null;
+                          final value = int.tryParse(trimmed);
+                          return value == null || value <= 0
+                              ? 'Use a positive integer.'
+                              : null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SegmentedButton<ShuffleSkipThresholdUnit>(
+                          segments: const [
+                            ButtonSegment(
+                              value: ShuffleSkipThresholdUnit.seconds,
+                              label: Text('Seconds'),
+                            ),
+                            ButtonSegment(
+                              value: ShuffleSkipThresholdUnit.minutes,
+                              label: Text('Minutes'),
+                            ),
+                          ],
+                          selected: {unit},
+                          onSelectionChanged: (selection) {
+                            setDialogState(() => unit = selection.single);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () {
+                    if (!formKey.currentState!.validate()) return;
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('Save and close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    final text = controller.text.trim();
+    final threshold = int.tryParse(text);
+    controller.dispose();
+
+    // Leaving by the button, Back, or tapping outside all saves valid input.
+    // Invalid input cannot replace the last persisted value.
+    if (text.isNotEmpty && (threshold == null || threshold <= 0)) return;
+    // The dialog route and its inherited-widget dependents need to finish
+    // detaching before applying a limit that may immediately skip this song.
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    final latest = widget.controller.tuningSettings;
+    await widget.controller.updateTuningSettings(
+      TuningSettings(
+        nightMode: latest.nightMode,
+        shuffleSkipThreshold: threshold,
+        shuffleSkipThresholdUnit: unit,
+        loadTimeoutSeconds: latest.loadTimeoutSeconds,
+        seekSeconds: latest.seekSeconds,
+        defaultPlaybackSpeed: latest.defaultPlaybackSpeed,
+        playbackSpeeds: latest.playbackSpeeds,
+        carouselMinFlingDistance: latest.carouselMinFlingDistance,
+        carouselMinFlingVelocity: latest.carouselMinFlingVelocity,
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Widget _speedButton(double currentSpeed) {

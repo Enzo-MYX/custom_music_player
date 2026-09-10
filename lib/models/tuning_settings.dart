@@ -1,6 +1,10 @@
+enum ShuffleSkipThresholdUnit { seconds, minutes }
+
 class TuningSettings {
   static const defaults = TuningSettings(
     nightMode: false,
+    shuffleSkipThreshold: null,
+    shuffleSkipThresholdUnit: ShuffleSkipThresholdUnit.minutes,
     loadTimeoutSeconds: 10,
     seekSeconds: 5,
     defaultPlaybackSpeed: 1.0,
@@ -10,6 +14,8 @@ class TuningSettings {
   );
 
   final bool nightMode;
+  final int? shuffleSkipThreshold;
+  final ShuffleSkipThresholdUnit shuffleSkipThresholdUnit;
   final int loadTimeoutSeconds;
   final int seekSeconds;
   final double defaultPlaybackSpeed;
@@ -19,6 +25,8 @@ class TuningSettings {
 
   const TuningSettings({
     required this.nightMode,
+    required this.shuffleSkipThreshold,
+    required this.shuffleSkipThresholdUnit,
     required this.loadTimeoutSeconds,
     required this.seekSeconds,
     required this.defaultPlaybackSpeed,
@@ -29,6 +37,8 @@ class TuningSettings {
 
   Map<String, dynamic> toJson() => {
     'nightMode': nightMode,
+    'shuffleSkipThreshold': shuffleSkipThreshold,
+    'shuffleSkipThresholdUnit': shuffleSkipThresholdUnit.name,
     'loadTimeoutSeconds': loadTimeoutSeconds,
     'seekSeconds': seekSeconds,
     'defaultPlaybackSpeed': defaultPlaybackSpeed,
@@ -38,6 +48,14 @@ class TuningSettings {
   };
 
   factory TuningSettings.fromJson(Map<String, dynamic> json) {
+    final rawShuffleSkipThreshold = json['shuffleSkipThreshold'];
+    final shuffleSkipThreshold =
+        rawShuffleSkipThreshold is num && rawShuffleSkipThreshold.toInt() > 0
+        ? rawShuffleSkipThreshold.toInt()
+        : null;
+    final shuffleSkipThresholdUnit = ShuffleSkipThresholdUnit.values
+        .where((unit) => unit.name == json['shuffleSkipThresholdUnit'])
+        .firstOrNull;
     final speeds =
         (json['playbackSpeeds'] as List<dynamic>?)
             ?.whereType<num>()
@@ -71,6 +89,9 @@ class TuningSettings {
       nightMode: json['nightMode'] is bool
           ? json['nightMode'] as bool
           : defaults.nightMode,
+      shuffleSkipThreshold: shuffleSkipThreshold,
+      shuffleSkipThresholdUnit:
+          shuffleSkipThresholdUnit ?? defaults.shuffleSkipThresholdUnit,
       loadTimeoutSeconds: validInt(
         'loadTimeoutSeconds',
         defaults.loadTimeoutSeconds,
@@ -95,5 +116,13 @@ class TuningSettings {
         10000,
       ),
     );
+  }
+
+  Duration? get shuffleSkipDuration {
+    final threshold = shuffleSkipThreshold;
+    if (threshold == null) return null;
+    return shuffleSkipThresholdUnit == ShuffleSkipThresholdUnit.seconds
+        ? Duration(seconds: threshold)
+        : Duration(minutes: threshold);
   }
 }

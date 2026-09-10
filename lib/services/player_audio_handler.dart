@@ -37,10 +37,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   AudioServiceRepeatMode _shuffleRepeatMode = AudioServiceRepeatMode.none;
   bool _shuffleEnabled = false;
   TuningSettings _tuningSettings = TuningSettings.defaults;
+  int? _shuffleLengthSkippedGeneration;
 
   void applyTuningSettings(TuningSettings settings) {
     _tuningSettings = settings;
     playbackState.add(_toPlaybackState(_player.playbackEvent));
+    _skipCurrentShuffleTrackIfTooLong(_player.duration);
   }
 
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -161,6 +163,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           duration: duration,
           metadata: _currentMetadata,
         );
+        _skipCurrentShuffleTrackIfTooLong(duration);
       }
     });
 
@@ -486,6 +489,22 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (!_resumeCheckpointController.isClosed) {
       _resumeCheckpointController.add(null);
     }
+  }
+
+  void _skipCurrentShuffleTrackIfTooLong(Duration? duration) {
+    final limit = _tuningSettings.shuffleSkipDuration;
+    final generation = _trackLoadGeneration;
+    if (!_shuffleEnabled ||
+        duration == null ||
+        limit == null ||
+        duration <= limit ||
+        !canGoNext ||
+        _shuffleLengthSkippedGeneration == generation) {
+      return;
+    }
+
+    _shuffleLengthSkippedGeneration = generation;
+    unawaited(skipToNext());
   }
 
   Future<void> _loadCurrentSong() async {

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/tuning_settings.dart';
 import '../services/playback_controller.dart';
@@ -20,6 +23,8 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
   late final TextEditingController _speedPresets;
   late final TextEditingController _flingDistance;
   late final TextEditingController _flingVelocity;
+  late final TextEditingController _shuffleSkipThreshold;
+  late ShuffleSkipThresholdUnit _shuffleSkipThresholdUnit;
   late bool _nightMode;
   bool _saving = false;
 
@@ -34,6 +39,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
 
   void _setControllerValues(TuningSettings settings, {bool create = false}) {
     _nightMode = settings.nightMode;
+    _shuffleSkipThresholdUnit = settings.shuffleSkipThresholdUnit;
     final values = [
       settings.loadTimeoutSeconds.toString(),
       settings.seekSeconds.toString(),
@@ -41,6 +47,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
       settings.playbackSpeeds.map(_formatNumber).join(', '),
       _formatNumber(settings.carouselMinFlingDistance),
       _formatNumber(settings.carouselMinFlingVelocity),
+      settings.shuffleSkipThreshold?.toString() ?? '',
     ];
     if (create) {
       _loadTimeout = TextEditingController(text: values[0]);
@@ -49,6 +56,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
       _speedPresets = TextEditingController(text: values[3]);
       _flingDistance = TextEditingController(text: values[4]);
       _flingVelocity = TextEditingController(text: values[5]);
+      _shuffleSkipThreshold = TextEditingController(text: values[6]);
     } else {
       final controllers = [
         _loadTimeout,
@@ -57,6 +65,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
         _speedPresets,
         _flingDistance,
         _flingVelocity,
+        _shuffleSkipThreshold,
       ];
       for (var index = 0; index < controllers.length; index++) {
         controllers[index].text = values[index];
@@ -72,6 +81,15 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     final value = int.tryParse(text?.trim() ?? '');
     return value == null || value < min || value > max
         ? 'Enter a whole number from $min to $max.'
+        : null;
+  }
+
+  String? _validateOptionalPositiveInt(String? text) {
+    final trimmed = text?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final value = int.tryParse(trimmed);
+    return value == null || value <= 0
+        ? 'Enter a positive whole number.'
         : null;
   }
 
@@ -105,6 +123,10 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     await widget.playbackController.updateTuningSettings(
       TuningSettings(
         nightMode: _nightMode,
+        shuffleSkipThreshold: _shuffleSkipThreshold.text.trim().isEmpty
+            ? null
+            : int.parse(_shuffleSkipThreshold.text.trim()),
+        shuffleSkipThresholdUnit: _shuffleSkipThresholdUnit,
         loadTimeoutSeconds: int.parse(_loadTimeout.text.trim()),
         seekSeconds: int.parse(_seekSeconds.text.trim()),
         defaultPlaybackSpeed: defaultSpeed,
@@ -125,14 +147,49 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     await _save();
   }
 
+  Future<void> _persistShuffleSettingsAfterExit(
+    int? threshold,
+    ShuffleSkipThresholdUnit unit,
+  ) async {
+    // Let the settings route finish detaching before a shorter limit can
+    // advance the active shuffled queue.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final latest = widget.playbackController.tuningSettings;
+    if (latest.shuffleSkipThreshold == threshold &&
+        latest.shuffleSkipThresholdUnit == unit) {
+      return;
+    }
+    await widget.playbackController.updateTuningSettings(
+      TuningSettings(
+        nightMode: latest.nightMode,
+        shuffleSkipThreshold: threshold,
+        shuffleSkipThresholdUnit: unit,
+        loadTimeoutSeconds: latest.loadTimeoutSeconds,
+        seekSeconds: latest.seekSeconds,
+        defaultPlaybackSpeed: latest.defaultPlaybackSpeed,
+        playbackSpeeds: latest.playbackSpeeds,
+        carouselMinFlingDistance: latest.carouselMinFlingDistance,
+        carouselMinFlingVelocity: latest.carouselMinFlingVelocity,
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    final thresholdText = _shuffleSkipThreshold.text.trim();
+    final threshold = int.tryParse(thresholdText);
+    if (thresholdText.isEmpty || (threshold != null && threshold > 0)) {
+      unawaited(
+        _persistShuffleSettingsAfterExit(threshold, _shuffleSkipThresholdUnit),
+      );
+    }
     _loadTimeout.dispose();
     _seekSeconds.dispose();
     _defaultSpeed.dispose();
     _speedPresets.dispose();
     _flingDistance.dispose();
     _flingVelocity.dispose();
+    _shuffleSkipThreshold.dispose();
     super.dispose();
   }
 
@@ -157,10 +214,14 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
                     ? null
                     : (value) async {
                         setState(() => _nightMode = value);
-                        final current = widget.playbackController.tuningSettings;
+                        final current =
+                            widget.playbackController.tuningSettings;
                         await widget.playbackController.updateTuningSettings(
                           TuningSettings(
                             nightMode: value,
+                            shuffleSkipThreshold: current.shuffleSkipThreshold,
+                            shuffleSkipThresholdUnit:
+                                current.shuffleSkipThresholdUnit,
                             loadTimeoutSeconds: current.loadTimeoutSeconds,
                             seekSeconds: current.seekSeconds,
                             defaultPlaybackSpeed: current.defaultPlaybackSpeed,
@@ -172,6 +233,46 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
                           ),
                         );
                       },
+              ),
+              const SizedBox(height: 24),
+              Text('Shuffle', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _shuffleSkipThreshold,
+                      decoration: const InputDecoration(
+                        labelText: 'Skip tracks longer than',
+                        hintText: 'No limit',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      validator: _validateOptionalPositiveInt,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SegmentedButton<ShuffleSkipThresholdUnit>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ShuffleSkipThresholdUnit.seconds,
+                        label: Text('Seconds'),
+                      ),
+                      ButtonSegment(
+                        value: ShuffleSkipThresholdUnit.minutes,
+                        label: Text('Minutes'),
+                      ),
+                    ],
+                    selected: {_shuffleSkipThresholdUnit},
+                    onSelectionChanged: (selection) {
+                      setState(
+                        () => _shuffleSkipThresholdUnit = selection.single,
+                      );
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               Text('Playback', style: Theme.of(context).textTheme.titleLarge),
