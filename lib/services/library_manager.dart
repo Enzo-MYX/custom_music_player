@@ -29,12 +29,18 @@ class LibraryManager {
 
   LibraryState get state => _state;
 
-  bool isIgnoredPath(String relativePath) {
+  bool isIgnoredPath(String relativePath, {bool isDirectory = false}) {
     final ignoreLibrary = _state.settings.ignoreLibrary;
-    return LibraryCommandMatcher(
+    final ignoredByPath = LibraryCommandMatcher(
       buildMode: ignoreLibrary.buildMode,
       commands: ignoreLibrary.commands,
     ).shouldInclude(relativePath);
+    if (ignoredByPath || isDirectory) return ignoredByPath;
+
+    final filename = relativePath.replaceAll('\\', '/').split('/').last;
+    final dot = filename.lastIndexOf('.');
+    final suffix = dot < 0 ? '' : filename.substring(dot + 1).toLowerCase();
+    return suffix.isNotEmpty && _state.settings.ignoreSuffixes.contains(suffix);
   }
 
   Future<bool> loadFolderBrowserRecursive() {
@@ -51,6 +57,14 @@ class LibraryManager {
 
   Future<void> saveMiniPlayerCollapsed(bool collapsed) {
     return _storage.saveMiniPlayerCollapsed(collapsed);
+  }
+
+  Future<double?> loadMiniPlayerVerticalPosition() {
+    return _storage.loadMiniPlayerVerticalPosition();
+  }
+
+  Future<void> saveMiniPlayerVerticalPosition(double position) {
+    return _storage.saveMiniPlayerVerticalPosition(position);
   }
 
   Future<void> load() async {
@@ -79,6 +93,7 @@ class LibraryManager {
         libraries: settings.libraries,
         selectedLibraryName: selectedLibraryName,
         ignoreLibrary: settings.ignoreLibrary,
+        ignoreSuffixes: settings.ignoreSuffixes,
       );
 
       await _storage.save(settings);
@@ -113,6 +128,7 @@ class LibraryManager {
       libraries: _state.settings.libraries,
       selectedLibraryName: _state.selectedLibraryName,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
 
     await _storage.save(newSettings);
@@ -161,6 +177,7 @@ class LibraryManager {
       libraries: _state.settings.libraries,
       selectedLibraryName: name,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
 
     await _storage.save(newSettings);
@@ -191,6 +208,7 @@ class LibraryManager {
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
     await _storage.save(newSettings);
 
@@ -222,6 +240,7 @@ class LibraryManager {
       libraries: newLibraries,
       selectedLibraryName: _state.selectedLibraryName,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
     await _storage.save(newSettings);
 
@@ -258,6 +277,38 @@ class LibraryManager {
       libraries: _state.settings.libraries,
       selectedLibraryName: _state.selectedLibraryName,
       ignoreLibrary: normalized,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
+    );
+    await _storage.save(newSettings);
+    await _storage.clearBuiltLibrary();
+    _state = LibraryState(
+      settings: newSettings,
+      selectedLibraryName: _state.selectedLibraryName,
+      builtLibraryName: null,
+      songs: const [],
+      scanning: false,
+    );
+  }
+
+  Future<void> updateIgnoreSuffixes(Iterable<String> suffixes) async {
+    final normalized =
+        suffixes
+            .map(normalizeIgnoreSuffix)
+            .where((suffix) => suffix.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final current = [..._state.settings.ignoreSuffixes]..sort();
+    if (current.length == normalized.length &&
+        current.indexed.every((entry) => entry.$2 == normalized[entry.$1])) {
+      return;
+    }
+    final newSettings = AppSettings(
+      rootUri: _state.settings.rootUri,
+      libraries: _state.settings.libraries,
+      selectedLibraryName: _state.selectedLibraryName,
+      ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: normalized,
     );
     await _storage.save(newSettings);
     await _storage.clearBuiltLibrary();
@@ -307,6 +358,7 @@ class LibraryManager {
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
 
     await _storage.save(newSettings);
@@ -352,6 +404,7 @@ class LibraryManager {
       libraries: newLibraries,
       selectedLibraryName: newSelectedName,
       ignoreLibrary: _state.settings.ignoreLibrary,
+      ignoreSuffixes: _state.settings.ignoreSuffixes,
     );
     await _storage.save(newSettings);
 
@@ -412,6 +465,7 @@ class LibraryManager {
         root,
         temporaryLibrary,
         ignoreLibrary: _state.settings.ignoreLibrary,
+        ignoreSuffixes: _state.settings.ignoreSuffixes,
       );
 
       _state = LibraryState(
@@ -457,6 +511,7 @@ class LibraryManager {
         root,
         library,
         ignoreLibrary: _state.settings.ignoreLibrary,
+        ignoreSuffixes: _state.settings.ignoreSuffixes,
       );
       final builtLibraryName = _state.selectedLibraryName!;
 
@@ -489,6 +544,7 @@ class LibraryManager {
     return jsonEncode({
       'library': library.toJson(),
       'ignoreLibrary': settings.ignoreLibrary.toJson(),
+      'ignoreSuffixes': settings.ignoreSuffixes,
     });
   }
 

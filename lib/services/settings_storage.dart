@@ -13,6 +13,8 @@ class SettingsStorage implements SettingsRepository {
   static const String _builtLibraryKey = 'built_library_cache';
   static const String _folderBrowserRecursiveKey = 'folder_browser_recursive';
   static const String _miniPlayerCollapsedKey = 'mini_player_collapsed';
+  static const String _miniPlayerVerticalPositionKey =
+      'mini_player_vertical_position';
   static const String _playbackResumeStateKey = 'playback_resume_state';
   static const String _tuningSettingsKey = 'tuning_settings';
 
@@ -90,6 +92,14 @@ class SettingsStorage implements SettingsRepository {
 
   Future<void> saveMiniPlayerCollapsed(bool collapsed) async {
     await _preferences.setBool(_miniPlayerCollapsedKey, collapsed);
+  }
+
+  Future<double?> loadMiniPlayerVerticalPosition() async {
+    return _preferences.getDouble(_miniPlayerVerticalPositionKey);
+  }
+
+  Future<void> saveMiniPlayerVerticalPosition(double position) async {
+    await _preferences.setDouble(_miniPlayerVerticalPositionKey, position);
   }
 
   Future<PlaybackResumeState?> loadPlaybackResumeState() async {

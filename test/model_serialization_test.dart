@@ -49,6 +49,7 @@ void main() {
         buildMode: LibraryBuildMode.includeNone,
         commands: [LibraryCommand(include: true, path: 'Podcasts')],
       ),
+      ignoreSuffixes: ['jpg', 'png'],
     );
 
     final json = original.toJson();
@@ -61,6 +62,7 @@ void main() {
     expect(restored.libraries[0].buildMode, LibraryBuildMode.includeNone);
     expect(restored.libraries[0].commands.length, 1);
     expect(restored.ignoreLibrary.commands.single.path, 'Podcasts');
+    expect(restored.ignoreSuffixes, ['jpg', 'png']);
   });
 
   test('older AppSettings default to an empty ignore library', () {
@@ -71,6 +73,15 @@ void main() {
 
     expect(restored.ignoreLibrary.buildMode, LibraryBuildMode.includeNone);
     expect(restored.ignoreLibrary.commands, isEmpty);
+    expect(restored.ignoreSuffixes, isEmpty);
+  });
+
+  test('AppSettings normalizes ignore suffixes', () {
+    final restored = AppSettings.fromJson({
+      'ignoreSuffixes': [' .JPG ', '.png', 'jpg', '', 42],
+    });
+
+    expect(restored.ignoreSuffixes, ['jpg', 'png']);
   });
 
   test('TuningSettings survives JSON serialization', () {

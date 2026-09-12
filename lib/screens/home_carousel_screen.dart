@@ -58,6 +58,10 @@ class HomeCarouselScreen extends StatefulWidget {
 class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   static const int _pageCount = 4;
   static const int _initialPage = 3001;
+  static const double _collapsedPlayerSize = 48;
+  static const double _expandedPlayerHeight = 68;
+  static const double _playerCenterOffset =
+      (_expandedPlayerHeight - _collapsedPlayerSize) / 2;
 
   late final PageController _pageController;
 
@@ -68,6 +72,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   String? _error;
   bool _miniPlayerCollapsed = false;
   Offset? _collapsedMiniPlayerPosition;
+  double? _collapsedMiniPlayerDragStartY;
   int _miniPlayerRestoreRequest = 0;
 
   @override
@@ -82,6 +87,8 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
   Future<void> _load() async {
     try {
       await widget.manager.load();
+      final savedMiniPlayerY = await widget.manager
+          .loadMiniPlayerVerticalPosition();
 
       if (!mounted) {
         return;
@@ -90,6 +97,9 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
       setState(() {
         _loading = false;
         _error = null;
+        if (savedMiniPlayerY != null && savedMiniPlayerY.isFinite) {
+          _collapsedMiniPlayerPosition = Offset(0, savedMiniPlayerY);
+        }
       });
     } catch (error) {
       if (!mounted) {
@@ -193,6 +203,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
       _ => TuningSettingsScreen(
         key: ValueKey('settings-$physicalIndex'),
         playbackController: widget.playbackController,
+        libraryManager: widget.manager,
       ),
     };
   }
@@ -235,7 +246,7 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
 
   Offset _constrainCollapsedPosition(Offset position, Size availableSize) {
     final mediaPadding = MediaQuery.paddingOf(context);
-    const buttonSize = 48.0;
+    const buttonSize = _collapsedPlayerSize;
     const edgePadding = 8.0;
 
     final minimumX = edgePadding;
@@ -244,10 +255,15 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
       availableSize.width - buttonSize - edgePadding,
     );
 
-    final minimumY = mediaPadding.top + edgePadding;
+    // Reserve room for both sizes so expanding keeps the same icon center.
+    final minimumY = mediaPadding.top + edgePadding + _playerCenterOffset;
     final maximumY = math.max(
       minimumY,
-      availableSize.height - mediaPadding.bottom - buttonSize - edgePadding,
+      availableSize.height -
+          mediaPadding.bottom -
+          buttonSize -
+          edgePadding -
+          _playerCenterOffset,
     );
 
     return Offset(
@@ -256,15 +272,55 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
     );
   }
 
-  void _moveCollapsedMiniPlayer(DragUpdateDetails details, Size availableSize) {
-    // Re-constrain the stored position before applying the drag delta.
-    // After an orientation change, the old coordinate may be outside the new
-    // viewport even though build() displays it at a constrained coordinate.
+  double _constrainExpandedY(double y, Size availableSize) {
+    final mediaPadding = MediaQuery.paddingOf(context);
+    const playerHeight = _expandedPlayerHeight;
+    const edgePadding = 8.0;
+    final minimumY = mediaPadding.top + edgePadding;
+    final maximumY = math.max(
+      minimumY,
+      availableSize.height - mediaPadding.bottom - playerHeight - edgePadding,
+    );
+    return y.clamp(minimumY, maximumY).toDouble();
+  }
+
+  void _startMovingCollapsedMiniPlayer(Size availableSize) {
     final currentPosition = _constrainCollapsedPosition(
       _collapsedMiniPlayerPosition ?? _defaultCollapsedPosition(availableSize),
       availableSize,
     );
+    _collapsedMiniPlayerDragStartY = currentPosition.dy;
+  }
 
+  void _moveCollapsedMiniPlayer(
+    LongPressMoveUpdateDetails details,
+    Size availableSize,
+  ) {
+    final startY = _collapsedMiniPlayerDragStartY;
+    if (startY == null) return;
+    final defaultPosition = _defaultCollapsedPosition(availableSize);
+    setState(() {
+      _collapsedMiniPlayerPosition = _constrainCollapsedPosition(
+        Offset(defaultPosition.dx, startY + details.offsetFromOrigin.dy),
+        availableSize,
+      );
+    });
+  }
+
+  void _finishMovingCollapsedMiniPlayer() {
+    _collapsedMiniPlayerDragStartY = null;
+    final position = _collapsedMiniPlayerPosition;
+    if (position != null) {
+      unawaited(widget.manager.saveMiniPlayerVerticalPosition(position.dy));
+    }
+  }
+
+  void _dragCollapsedMiniPlayer(DragUpdateDetails details, Size availableSize) {
+    // Start from the visible position, including after a viewport resize.
+    final currentPosition = _constrainCollapsedPosition(
+      _collapsedMiniPlayerPosition ?? _defaultCollapsedPosition(availableSize),
+      availableSize,
+    );
     setState(() {
       _collapsedMiniPlayerPosition = _constrainCollapsedPosition(
         currentPosition + details.delta,
@@ -298,69 +354,96 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
         if (_miniPlayerCollapsed) {
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onTap: () => _setMiniPlayerCollapsed(false),
             onPanUpdate: (details) {
-              _moveCollapsedMiniPlayer(details, availableSize);
+              _dragCollapsedMiniPlayer(details, availableSize);
             },
-            child: FloatingActionButton.small(
-              heroTag: 'collapsed-mini-player',
-              tooltip: 'Expand mini-player',
-              onPressed: () => _setMiniPlayerCollapsed(false),
-              child: const Icon(Icons.music_note),
+            onPanEnd: (_) => _finishMovingCollapsedMiniPlayer(),
+            onPanCancel: _finishMovingCollapsedMiniPlayer,
+            child: Tooltip(
+              message: 'Expand mini-player',
+              // A tooltip long press would consume hold-then-drag gestures.
+              triggerMode: TooltipTriggerMode.manual,
+              child: Material(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                elevation: 6,
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox.square(
+                  dimension: _collapsedPlayerSize,
+                  child: Icon(
+                    Icons.music_note,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
             ),
           );
         }
 
-        return Material(
-          color: Theme.of(context).colorScheme.surfaceContainerHigh,
-          elevation: 6,
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: _openPlaybackScreen,
-            child: SizedBox(
-              height: 68,
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.music_note,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      song.relativePath,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyLarge,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (_) {
+            _startMovingCollapsedMiniPlayer(availableSize);
+          },
+          onLongPressMoveUpdate: (details) {
+            _moveCollapsedMiniPlayer(details, availableSize);
+          },
+          onLongPressEnd: (_) => _finishMovingCollapsedMiniPlayer(),
+          onLongPressCancel: _finishMovingCollapsedMiniPlayer,
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+            elevation: 6,
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _openPlaybackScreen,
+              child: SizedBox(
+                height: _expandedPlayerHeight,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 16),
+                    Icon(
+                      Icons.music_note,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                  ),
-                  StreamBuilder<bool>(
-                    stream: widget.playbackController.playingStream,
-                    initialData: false,
-                    builder: (context, playingSnapshot) {
-                      final isPlaying = playingSnapshot.data ?? false;
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        song.relativePath,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    ),
+                    StreamBuilder<bool>(
+                      stream: widget.playbackController.playingStream,
+                      initialData: false,
+                      builder: (context, playingSnapshot) {
+                        final isPlaying = playingSnapshot.data ?? false;
 
-                      return IconButton(
-                        tooltip: isPlaying ? 'Pause' : 'Play',
-                        onPressed: () {
-                          if (isPlaying) {
-                            widget.playbackController.pause();
-                          } else {
-                            widget.playbackController.play();
-                          }
-                        },
-                        icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    tooltip: 'Collapse player',
-                    onPressed: () => _setMiniPlayerCollapsed(true),
-                    icon: const Icon(Icons.keyboard_arrow_down),
-                  ),
-                  const SizedBox(width: 4),
-                ],
+                        return IconButton(
+                          tooltip: isPlaying ? 'Pause' : 'Play',
+                          onPressed: () {
+                            if (isPlaying) {
+                              widget.playbackController.pause();
+                            } else {
+                              widget.playbackController.play();
+                            }
+                          },
+                          icon: Icon(
+                            isPlaying ? Icons.pause : Icons.play_arrow,
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Collapse player',
+                      onPressed: () => _setMiniPlayerCollapsed(true),
+                      icon: const Icon(Icons.keyboard_arrow_down),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
               ),
             ),
           ),
@@ -444,6 +527,10 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                 _defaultCollapsedPosition(availableSize),
             availableSize,
           );
+          final expandedY = _constrainExpandedY(
+            collapsedPosition.dy - _playerCenterOffset,
+            availableSize,
+          );
 
           return Stack(
             children: [
@@ -474,9 +561,10 @@ class _HomeCarouselScreenState extends State<HomeCarouselScreen> {
                 Positioned(
                   left: 16,
                   right: 16,
-                  bottom: 200,
+                  top: expandedY,
                   child: SafeArea(
                     top: false,
+                    bottom: false,
                     child: _buildMiniPlayer(availableSize),
                   ),
                 ),

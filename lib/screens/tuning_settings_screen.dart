@@ -5,11 +5,17 @@ import 'package:flutter/services.dart';
 
 import '../models/tuning_settings.dart';
 import '../services/playback_controller.dart';
+import '../services/library_manager.dart';
 
 class TuningSettingsScreen extends StatefulWidget {
-  const TuningSettingsScreen({super.key, required this.playbackController});
+  const TuningSettingsScreen({
+    super.key,
+    required this.playbackController,
+    required this.libraryManager,
+  });
 
   final PlaybackController playbackController;
+  final LibraryManager libraryManager;
 
   @override
   State<TuningSettingsScreen> createState() => _TuningSettingsScreenState();
@@ -24,6 +30,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
   late final TextEditingController _flingDistance;
   late final TextEditingController _flingVelocity;
   late final TextEditingController _shuffleSkipThreshold;
+  late final TextEditingController _ignoreSuffixes;
   late ShuffleSkipThresholdUnit _shuffleSkipThresholdUnit;
   late bool _nightMode;
   bool _saving = false;
@@ -34,6 +41,9 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     _setControllerValues(
       widget.playbackController.tuningSettings,
       create: true,
+    );
+    _ignoreSuffixes = TextEditingController(
+      text: widget.libraryManager.state.settings.ignoreSuffixes.join(', '),
     );
   }
 
@@ -135,6 +145,9 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
         carouselMinFlingVelocity: double.parse(_flingVelocity.text.trim()),
       ),
     );
+    await widget.libraryManager.updateIgnoreSuffixes(
+      _ignoreSuffixes.text.split(','),
+    );
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(
@@ -144,6 +157,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
 
   Future<void> _reset() async {
     _setControllerValues(TuningSettings.defaults);
+    _ignoreSuffixes.clear();
     await _save();
   }
 
@@ -190,6 +204,7 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
     _flingDistance.dispose();
     _flingVelocity.dispose();
     _shuffleSkipThreshold.dispose();
+    _ignoreSuffixes.dispose();
     super.dispose();
   }
 
@@ -273,6 +288,18 @@ class _TuningSettingsScreenState extends State<TuningSettingsScreen> {
                     },
                   ),
                 ],
+              ),
+              const SizedBox(height: 24),
+              Text('Library', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _ignoreSuffixes,
+                decoration: const InputDecoration(
+                  labelText: 'Ignore file suffixes',
+                  hintText: 'jpg, png',
+                  helperText: 'Comma-separated; dots are optional.',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 24),
               Text('Playback', style: Theme.of(context).textTheme.titleLarge),

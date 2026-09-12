@@ -27,7 +27,6 @@ class ShuffleScreen extends StatefulWidget {
 class _ShuffleScreenState extends State<ShuffleScreen> {
   bool _loading = true;
   bool _starting = false;
-  bool _selectedThroughDropdown = false;
   String? _error;
 
   @override
@@ -73,7 +72,6 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
     }
 
     setState(() {
-      _selectedThroughDropdown = true;
       _error = null;
     });
   }
@@ -88,9 +86,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
         return;
       }
 
-      setState(() {
-        _selectedThroughDropdown = false;
-      });
+      setState(() {});
 
       return;
     }
@@ -109,9 +105,7 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
       return;
     }
 
-    setState(() {
-      _selectedThroughDropdown = false;
-    });
+    setState(() {});
   }
 
   Future<void> _startFolderShuffle() async {
@@ -163,7 +157,6 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
 
       setState(() {
         _starting = false;
-        _selectedThroughDropdown = false;
       });
 
       await Navigator.of(context).push(
@@ -191,11 +184,6 @@ class _ShuffleScreenState extends State<ShuffleScreen> {
     final initialState = widget.manager.state;
 
     if (initialState.selectedLibrary == null) {
-      await _openLibraryManager();
-      return;
-    }
-
-    if (initialState.needsRebuild && !_selectedThroughDropdown) {
       await _openLibraryManager();
       return;
     }

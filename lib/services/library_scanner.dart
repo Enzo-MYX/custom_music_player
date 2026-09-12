@@ -13,6 +13,7 @@ class LibraryScanner {
     SafDocumentFile root,
     MusicLibrary library, {
     MusicLibrary? ignoreLibrary,
+    List<String> ignoreSuffixes = const [],
   }) async {
     final matcher = LibraryCommandMatcher(
       buildMode: library.buildMode,
@@ -32,6 +33,7 @@ class LibraryScanner {
       relativeDirectory: '',
       matcher: matcher,
       ignoreMatcher: ignoreMatcher,
+      ignoreSuffixes: ignoreSuffixes.toSet(),
       songs: songs,
     );
 
@@ -44,6 +46,7 @@ class LibraryScanner {
     required LibraryCommandMatcher matcher,
     required LibraryCommandMatcher? ignoreMatcher,
     required List<Song> songs,
+    required Set<String> ignoreSuffixes,
   }) async {
     final entries = await _saf.list(directory.uri);
     final sidecarLyricsByBasename = <String, String>{};
@@ -66,10 +69,12 @@ class LibraryScanner {
           relativeDirectory: relativePath,
           matcher: matcher,
           ignoreMatcher: ignoreMatcher,
+          ignoreSuffixes: ignoreSuffixes,
           songs: songs,
         );
       } else if (_extension(entry.name) != 'lrc') {
-        if (matcher.shouldInclude(relativePath) &&
+        if (!ignoreSuffixes.contains(_extension(entry.name)) &&
+            matcher.shouldInclude(relativePath) &&
             !(ignoreMatcher?.shouldInclude(relativePath) ?? false)) {
           songs.add(
             Song(

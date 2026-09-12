@@ -138,7 +138,10 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
       final relativePath = relativeDirectory.isEmpty
           ? entry.name
           : '$relativeDirectory/${entry.name}';
-      return !widget.manager.isIgnoredPath(relativePath) &&
+      return !widget.manager.isIgnoredPath(
+            relativePath,
+            isDirectory: entry.isDir,
+          ) &&
           (entry.isDir || !_isLyricsFile(entry.name));
     }).toList();
 
@@ -399,7 +402,10 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
           ? entry.name
           : '$relativeDirectory/${entry.name}';
 
-      if (widget.manager.isIgnoredPath(relativePath)) {
+      if (widget.manager.isIgnoredPath(
+        relativePath,
+        isDirectory: entry.isDir,
+      )) {
         continue;
       }
 
